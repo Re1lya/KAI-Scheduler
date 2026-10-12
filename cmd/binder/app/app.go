@@ -74,11 +74,6 @@ func New(options *Options, config *rest.Config) (*App, error) {
 				},
 			},
 		},
-		Client: client.Options{
-			Cache: &client.CacheOptions{
-				DisableFor: []client.Object{&corev1.ConfigMap{}},
-			},
-		},
 		Metrics: server.Options{
 			BindAddress: options.MetricsAddr,
 		},
@@ -110,8 +105,6 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		Scheme: scheme,
 		Cache: &client.CacheOptions{
 			Reader: mgr.GetCache(),
-			// Older GPU-sharing ConfigMaps have no label and are outside the filtered cache.
-			DisableFor: []client.Object{&corev1.ConfigMap{}},
 		},
 	})
 	if err != nil {
