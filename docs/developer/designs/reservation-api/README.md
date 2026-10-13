@@ -9,9 +9,7 @@ cases.
 
 A `Reservation` holds node capacity for a pod that does not exist yet.
 Later, a pod from another PodGroup takes over the held capacity on the same
-node. The API is generic: nothing in it names a workload, a device family or
-a topology. Domain logic, such as "K workers in each network domain another
-system chose", lives in a controller above it.
+node.
 
 ## Why
 
