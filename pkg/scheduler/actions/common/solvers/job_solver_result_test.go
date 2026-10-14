@@ -453,3 +453,28 @@ func scenarioSearchMetricHasLabels(metric *dto.Metric, labels map[string]string)
 	}
 	return true
 }
+
+func TestSolveTasksWithResultSolvesOnlyGivenTasks(t *testing.T) {
+	ssn, pendingJob := newJobSolverResultTestSession(t, 2)
+	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
+
+	_, statement, _, result := solver.SolveTasksWithResult(ssn, pendingJob, nil)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason(), "no tasks means nothing to solve")
+
+	var oneTask []*pod_info.PodInfo
+	for _, task := range pendingJob.GetAllPodsMap() {
+		oneTask = append(oneTask, task)
+		break
+	}
+	_, statement, _, result = solver.SolveTasksWithResult(ssn, pendingJob, oneTask)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultNoGenerator, result.Reason(), "given tasks reach the search")
+}
+
+func TestPinFeasibleNodes(t *testing.T) {
+	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
+	require.False(t, solver.pinnedFeasibleNodes)
+	require.Same(t, solver, solver.PinFeasibleNodes())
+	require.True(t, solver.pinnedFeasibleNodes)
+}

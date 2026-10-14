@@ -126,6 +126,97 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name: "job with unschedulable pending tasks does not reclaim for its resize",
+			Jobs: []*jobs_fake.TestJobBasic{
+				func() *jobs_fake.TestJobBasic {
+					job := reclaimResizeJob(constants.PriorityTrainNumber, 3, 1)
+					job.RootSubGroupSet = jobs_fake.DefaultSubGroup(1)
+					job.Tasks = append(job.Tasks, &tasks_fake.TestTaskBasic{
+						State: pod_status.Pending, NodeAffinityNames: []string{"missing"},
+					})
+					return job
+				}(),
+				reclaimVictimJob(2),
+			},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},
+			Queues: []test_utils.TestQueueBasic{cpuQueue("queue0", 6000), cpuQueue("queue1", 0)},
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"victim": {NodeName: "node0", Status: pod_status.Running},
+			},
+			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer-0": {NodeName: "node0", Status: pod_status.Running},
+				"resizer-1": {Status: pod_status.Pending},
+			},
+			Mocks:                    mocks(0),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "non-preemptible victim is not reclaimed",
+			Jobs: []*jobs_fake.TestJobBasic{
+				reclaimResizeJob(constants.PriorityTrainNumber, 3, 1),
+				func() *jobs_fake.TestJobBasic {
+					job := reclaimVictimJob(2)
+					job.Priority = constants.PriorityBuildNumber
+					return job
+				}(),
+			},
+			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},
+			Queues:                   []test_utils.TestQueueBasic{cpuQueue("queue0", 3000), cpuQueue("queue1", 1000)},
+			JobExpectedResults:       expect(pod_status.Running, pod_status.Running),
+			Mocks:                    mocks(0),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "victim on another node is not reclaimed",
+			Jobs: []*jobs_fake.TestJobBasic{
+				reclaimResizeJob(constants.PriorityTrainNumber, 3, 1),
+				{
+					Name: "peer", QueueName: "queue0", Priority: constants.PriorityTrainNumber, RequiredCPUsPerTask: 2,
+					Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+				},
+				func() *jobs_fake.TestJobBasic {
+					job := reclaimVictimJob(2)
+					job.Tasks[0].NodeName = "node1"
+					return job
+				}(),
+			},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}, "node1": {CPUMillis: 4}},
+			Queues: []test_utils.TestQueueBasic{cpuQueue("queue0", 6000), cpuQueue("queue1", 0)},
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer": {NodeName: "node0", Status: pod_status.Running},
+				"peer":    {NodeName: "node0", Status: pod_status.Running},
+				"victim":  {NodeName: "node1", Status: pod_status.Running},
+			},
+			Mocks:                    mocks(0),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "memory-only resize reclaims",
+			Jobs: []*jobs_fake.TestJobBasic{
+				{
+					Name: "resizer", QueueName: "queue0", Priority: constants.PriorityTrainNumber,
+					RequiredCPUsPerTask: 1, RequiredMemoryPerTask: 3e9,
+					Tasks: []*tasks_fake.TestTaskBasic{{
+						State: pod_status.Running, NodeName: "node0",
+						ResizeStatus: &tasks_fake.TestResizeStatus{ActualMemory: 1e9, Deferred: true},
+					}},
+				},
+				{
+					Name: "victim", QueueName: "queue1", Priority: constants.PriorityTrainNumber,
+					RequiredCPUsPerTask: 1, RequiredMemoryPerTask: 2e9,
+					Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+				},
+			},
+			Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 8, CPUMemory: 4e9}},
+			Queues: []test_utils.TestQueueBasic{
+				{Name: "queue0", DeservedCPUs: test_utils.CreateFloat64Pointer(8000), DeservedMemory: test_utils.CreateFloat64Pointer(4000)},
+				{Name: "queue1", DeservedCPUs: test_utils.CreateFloat64Pointer(0), DeservedMemory: test_utils.CreateFloat64Pointer(0)},
+			},
+			JobExpectedResults:       expect(pod_status.Running, pod_status.Releasing),
+			Mocks:                    mocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name:                     "victim protected by reclaim min-runtime",
 			Jobs:                     []*jobs_fake.TestJobBasic{reclaimResizeJob(constants.PriorityTrainNumber, 3, 1), reclaimVictimJob(2)},
 			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},

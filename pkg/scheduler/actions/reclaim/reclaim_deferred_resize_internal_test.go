@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 )
 
@@ -40,4 +41,14 @@ func TestIsEligibleForDeferredResizeUsesCanReclaimResources(t *testing.T) {
 	require.Same(t, reclaimer, gotJob)
 	canReclaim = true
 	require.True(t, isEligibleForDeferredResize(ssn)(reclaimer, nil))
+}
+
+func TestDeferredResizeSolverStartsJobSolution(t *testing.T) {
+	ssn, reclaimer, _, _ := newVictimQueueTestSession()
+	calls := 0
+	ssn.AddOnJobSolutionStartFn(func() { calls++ })
+
+	solver := newDeferredResizeSolver(ssn, reclaimer, nil)(&node_info.NodeInfo{Name: "node-0"})
+	require.NotNil(t, solver)
+	require.Equal(t, 1, calls)
 }

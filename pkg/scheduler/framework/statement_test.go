@@ -1698,3 +1698,30 @@ func TestStatement_PipelineTaskEvictedByEnclosingStatement(t *testing.T) {
 	assert.Equal(t, idleBefore, node.IdleVector)
 	assert.Equal(t, releasingBefore, node.ReleasingVector)
 }
+
+func TestStatement_PipelineTaskEvictedBySameStatementUnevicts(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:                "job0",
+			QueueName:           "queue0",
+			RequiredCPUsPerTask: 2,
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 4},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	task := jobs["job0"].GetAllPodsMap()["job0-0"]
+
+	stmt := session.Statement()
+	require.NoError(t, stmt.Evict(task, "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Pipeline(task, "node0", false))
+	assert.Equal(t, pod_status.Running, task.Status, "pipelining back in the same statement unevicts")
+	assert.Empty(t, stmt.EvictedTasks())
+
+	// Once the eviction is undone, a later pipeline in place is a regular pipeline.
+	stmt.Discard()
+	assert.Equal(t, pod_status.Running, task.Status)
+}
