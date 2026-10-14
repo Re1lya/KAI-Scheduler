@@ -133,12 +133,12 @@ func Attempt(
 		return false, nil, nil
 	}
 
-	_, stmt, _, result := newSolver(node).SolveWithResult(ssn, job)
+	_, stmt, _, result := newSolver(node).SolveTasksWithResult(ssn, job, tasks)
 	if stmt == nil {
 		return false, nil, result
 	}
 	// JobSolver reports unsolved here since a Releasing task already counts as active.
-	solved := result.Reason() == solvers.SearchResultSolved && allPipelinedOnNode(tasks, node.Name)
+	solved := result.Reason() == solvers.SearchResultSolved && allPipelinedOnNode(job, tasks, node.Name)
 	victims = stmt.EvictedTasks()
 	stmt.Discard()
 	self.Discard()
@@ -168,9 +168,12 @@ func nodeFitsAfterReleasing(node *node_info.NodeInfo) bool {
 	return true
 }
 
-func allPipelinedOnNode(tasks []*pod_info.PodInfo, nodeName string) bool {
+// allPipelinedOnNode checks the job's current task objects; the solver pipelines clones.
+func allPipelinedOnNode(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo, nodeName string) bool {
+	jobTasks := job.GetAllPodsMap()
 	for _, task := range tasks {
-		if task.Status != pod_status.Pipelined || task.NodeName != nodeName {
+		current, found := jobTasks[task.UID]
+		if !found || current.Status != pod_status.Pipelined || current.NodeName != nodeName {
 			return false
 		}
 	}

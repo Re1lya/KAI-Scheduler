@@ -158,7 +158,7 @@ func newDeferredResizeSolver(
 			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
 			framework.Preempt,
 			actionBudget,
-		)
+		).PinFeasibleNodes()
 	}
 }
 
