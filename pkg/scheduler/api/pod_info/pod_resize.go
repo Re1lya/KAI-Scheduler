@@ -40,11 +40,21 @@ func isResizePreemptionDisabled(pod *v1.Pod) bool {
 
 // hasPendingUpsize guards against a stale Deferred condition left after a later downsize.
 func hasPendingUpsize(pod *v1.Pod) bool {
-	statuses := make(map[string]*v1.ContainerStatus, len(pod.Status.ContainerStatuses))
+	statuses := make(map[string]*v1.ContainerStatus,
+		len(pod.Status.ContainerStatuses)+len(pod.Status.InitContainerStatuses))
 	for i := range pod.Status.ContainerStatuses {
 		statuses[pod.Status.ContainerStatuses[i].Name] = &pod.Status.ContainerStatuses[i]
 	}
-	for _, container := range pod.Spec.Containers {
+	for i := range pod.Status.InitContainerStatuses {
+		statuses[pod.Status.InitContainerStatuses[i].Name] = &pod.Status.InitContainerStatuses[i]
+	}
+	containers := pod.Spec.Containers
+	for _, container := range pod.Spec.InitContainers {
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			containers = append(containers[:len(containers):len(containers)], container)
+		}
+	}
+	for _, container := range containers {
 		status, found := statuses[container.Name]
 		if !found {
 			continue

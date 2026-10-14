@@ -97,3 +97,23 @@ func TestIsDeferredResizeTask_MemoryOnlyUpsize(t *testing.T) {
 
 	assert.True(t, IsDeferredResizeTask(&PodInfo{Pod: pod, Status: pod_status.Running}))
 }
+
+func TestIsDeferredResizeTask_SidecarUpsize(t *testing.T) {
+	always := v1.ContainerRestartPolicyAlways
+	pod := podWithContainers([]v1.Container{
+		{Name: "c1", Resources: v1.ResourceRequirements{Requests: newResourceList("1", "1Gi")}},
+	})
+	pod.Spec.InitContainers = []v1.Container{{
+		Name: "sidecar", RestartPolicy: &always,
+		Resources: v1.ResourceRequirements{Requests: newResourceList("2", "1Gi")},
+	}}
+	withContainerStatus(pod, "c1", newResourceList("1", "1Gi"), newResourceList("1", "1Gi"))
+	pod.Status.InitContainerStatuses = []v1.ContainerStatus{{
+		Name:               "sidecar",
+		Resources:          &v1.ResourceRequirements{Requests: newResourceList("1", "1Gi")},
+		AllocatedResources: newResourceList("1", "1Gi"),
+	}}
+	pod.Status.Conditions = []v1.PodCondition{resizePendingCondition(v1.PodReasonDeferred)}
+
+	assert.True(t, IsDeferredResizeTask(&PodInfo{Pod: pod, Status: pod_status.Running}))
+}
