@@ -78,7 +78,10 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 		}
 
 		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
-			recordPreemptionDelayFitError(job)
+			// A running job included only for a deferred resize is not unschedulable.
+			if len(job.PodStatusIndex[pod_status.Pending]) > 0 {
+				recordPreemptionDelayFitError(job)
+			}
 			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
 				job.NamespacedName)
 			continue

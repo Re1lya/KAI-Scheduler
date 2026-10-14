@@ -110,6 +110,10 @@ func Attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	tasks []*pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
+	tasks = currentDeferredTasks(job, tasks, node.Name)
+	if len(tasks) == 0 {
+		return false, nil, nil
+	}
 	if nodeFitsAfterReleasing(node) {
 		return true, nil, nil
 	}
@@ -157,6 +161,21 @@ func Attempt(
 		log.InfraLogger.Errorf("Failed to commit %s statement for deferred resize: %v", actionType, err)
 	}
 	return true, victims, result
+}
+
+// currentDeferredTasks re-resolves tasks against the job: earlier evictions in the same action
+// may have changed them since Jobs was computed, and statements may have swapped in clones.
+func currentDeferredTasks(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo, nodeName string) []*pod_info.PodInfo {
+	jobTasks := job.GetAllPodsMap()
+	current := make([]*pod_info.PodInfo, 0, len(tasks))
+	for _, task := range tasks {
+		jobTask, found := jobTasks[task.UID]
+		if !found || jobTask.IsVirtualStatus || jobTask.NodeName != nodeName || !pod_info.IsDeferredResizeTask(jobTask) {
+			continue
+		}
+		current = append(current, jobTask)
+	}
+	return current
 }
 
 func nodeFitsAfterReleasing(node *node_info.NodeInfo) bool {
