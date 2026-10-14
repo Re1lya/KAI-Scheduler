@@ -49,6 +49,8 @@ func DescribeDeferredResizeSpecs() bool {
 		var (
 			testCtx           *testcontext.TestContext
 			testQueue         *v2.Queue
+			overShareQueue    *v2.Queue
+			reclaimerQueue    *v2.Queue
 			lowPriorityClass  string
 			highPriorityClass string
 		)
@@ -61,7 +63,17 @@ func DescribeDeferredResizeSpecs() bool {
 
 			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 			testQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
-			testCtx.InitQueues([]*v2.Queue{testQueue, parentQueue})
+			// No deserved quota: everything this queue runs is over its fair share and reclaimable.
+			overShareQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
+			overShareQueue.Spec.Resources.CPU.Quota = 0
+			overShareQueue.Spec.Resources.CPU.OverQuotaWeight = 0
+			overShareQueue.Spec.Resources.Memory.Quota = 0
+			overShareQueue.Spec.Resources.Memory.OverQuotaWeight = 0
+			// Deserved quota above any kind cluster's size, so the resize stays within fair share.
+			reclaimerQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
+			reclaimerQueue.Spec.Resources.CPU.Quota = 1000000
+			reclaimerQueue.Spec.Resources.Memory.Quota = 1000000
+			testCtx.InitQueues([]*v2.Queue{testQueue, overShareQueue, reclaimerQueue, parentQueue})
 
 			lowPriorityValue := utils.RandomIntBetween(0, constant.NonPreemptiblePriorityThreshold-2)
 			lowPriorityClass = utils.GenerateRandomK8sName(10)
@@ -87,7 +99,7 @@ func DescribeDeferredResizeSpecs() bool {
 
 		It("keeps a deferred resize pending when deferred resize preemption is disabled", func(ctx context.Context) {
 			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(false))).To(Succeed())
-			setup := createDeferredResize(ctx, testCtx, testQueue, highPriorityClass, lowPriorityClass)
+			setup := createDeferredResize(ctx, testCtx, testQueue, testQueue, highPriorityClass, lowPriorityClass)
 
 			Consistently(func(g Gomega) {
 				g.Expect(isPodResizeDeferred(ctx, testCtx, setup.resizer)).To(BeTrue())
@@ -100,28 +112,48 @@ func DescribeDeferredResizeSpecs() bool {
 
 		It("evicts a lower-priority pod on the node so the deferred resize is enacted", func(ctx context.Context) {
 			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
-			setup := createDeferredResize(ctx, testCtx, testQueue, highPriorityClass, lowPriorityClass)
+			setup := createDeferredResize(ctx, testCtx, testQueue, testQueue, highPriorityClass, lowPriorityClass)
+			expectResizeEnactedAfterOneEviction(ctx, testCtx, setup)
+		})
 
-			Eventually(func(g Gomega) {
-				evicted := 0
-				for _, filler := range setup.fillers {
-					if isPodTerminating(ctx, testCtx, filler) {
-						evicted++
-					}
-				}
-				g.Expect(evicted).To(BeNumerically(">=", 1))
-			}).WithContext(ctx).WithTimeout(resizeTimeout).WithPolling(resizePoll).Should(Succeed())
-
-			expectEnactedCPU(ctx, testCtx, setup.resizer, setup.targetCPU)
+		It("reclaims from a queue over its fair share so the deferred resize is enacted", func(ctx context.Context) {
+			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
+			setup := createDeferredResize(ctx, testCtx, reclaimerQueue, overShareQueue, lowPriorityClass, lowPriorityClass)
+			expectResizeEnactedAfterOneEviction(ctx, testCtx, setup)
 		})
 	})
 }
 
+// expectResizeEnactedAfterOneEviction checks that exactly one filler is evicted, the kubelet
+// enacts the resize, and nothing more is evicted afterwards.
+func expectResizeEnactedAfterOneEviction(ctx context.Context, testCtx *testcontext.TestContext, setup *deferredResizeSetup) {
+	countEvicted := func() int {
+		evicted := 0
+		for _, filler := range setup.fillers {
+			if isPodTerminating(ctx, testCtx, filler) {
+				evicted++
+			}
+		}
+		return evicted
+	}
+	Eventually(countEvicted).WithContext(ctx).WithTimeout(resizeTimeout).WithPolling(resizePoll).
+		Should(BeNumerically(">=", 1))
+
+	expectEnactedCPU(ctx, testCtx, setup.resizer, setup.targetCPU)
+	Eventually(func() bool {
+		return hasResizePendingCondition(ctx, testCtx, setup.resizer)
+	}).WithContext(ctx).WithTimeout(resizeTimeout).WithPolling(resizePoll).Should(BeFalse())
+
+	Consistently(countEvicted).WithContext(ctx).WithTimeout(deferredResizeQuietFor).WithPolling(resizePoll).
+		Should(Equal(1), "only one filler is needed for the resize")
+}
+
 func createDeferredResize(
-	ctx context.Context, testCtx *testcontext.TestContext, podQueue *v2.Queue, highPriorityClass, lowPriorityClass string,
+	ctx context.Context, testCtx *testcontext.TestContext, resizerQueue, fillerQueue *v2.Queue,
+	resizerPriorityClass, fillerPriorityClass string,
 ) *deferredResizeSetup {
-	resizer := rd.CreatePodObject(podQueue, cpuRequest(resizerInitialMilliCPU))
-	resizer.Spec.PriorityClassName = highPriorityClass
+	resizer := rd.CreatePodObject(resizerQueue, cpuRequest(resizerInitialMilliCPU))
+	resizer.Spec.PriorityClassName = resizerPriorityClass
 	resizer, err := rd.CreatePod(ctx, testCtx.KubeClientset, resizer)
 	Expect(err).NotTo(HaveOccurred(), "failed to create resizer pod")
 	wait.ForPodReady(ctx, testCtx.ControllerClient, resizer)
@@ -141,8 +173,8 @@ func createDeferredResize(
 		targetCPU: fmt.Sprintf("%dm", resizerInitialMilliCPU+nodeSlackMilliCPU+fillerMilliCPU/2),
 	}
 	for range 2 {
-		filler := rd.CreatePodObject(podQueue, cpuRequest(fillerMilliCPU))
-		filler.Spec.PriorityClassName = lowPriorityClass
+		filler := rd.CreatePodObject(fillerQueue, cpuRequest(fillerMilliCPU))
+		filler.Spec.PriorityClassName = fillerPriorityClass
 		filler.Spec.NodeSelector = map[string]string{v1.LabelHostname: nodeName}
 		filler, err = rd.CreatePod(ctx, testCtx.KubeClientset, filler)
 		Expect(err).NotTo(HaveOccurred(), "failed to create filler pod")
@@ -177,6 +209,18 @@ func isPodResizeDeferred(ctx context.Context, testCtx *testcontext.TestContext, 
 	for _, c := range current.Status.Conditions {
 		if c.Type == v1.PodResizePending {
 			return c.Status == v1.ConditionTrue && c.Reason == v1.PodReasonDeferred
+		}
+	}
+	return false
+}
+
+func hasResizePendingCondition(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) bool {
+	current := &v1.Pod{}
+	Expect(testCtx.ControllerClient.Get(ctx,
+		types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, current)).To(Succeed())
+	for _, c := range current.Status.Conditions {
+		if c.Type == v1.PodResizePending && c.Status == v1.ConditionTrue {
+			return true
 		}
 	}
 	return false
