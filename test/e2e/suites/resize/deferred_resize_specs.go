@@ -111,14 +111,17 @@ func DescribeDeferredResizeSpecs() bool {
 		})
 
 		It("evicts a lower-priority pod on the node so the deferred resize is enacted", func(ctx context.Context) {
-			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
+			// Observe Deferred before enabling the flag; with it on, room is freed before a poll sees it.
+			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(false))).To(Succeed())
 			setup := createDeferredResize(ctx, testCtx, testQueue, testQueue, highPriorityClass, lowPriorityClass)
+			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
 			expectResizeEnactedAfterOneEviction(ctx, testCtx, setup)
 		})
 
 		It("reclaims from a queue over its fair share so the deferred resize is enacted", func(ctx context.Context) {
-			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
+			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(false))).To(Succeed())
 			setup := createDeferredResize(ctx, testCtx, reclaimerQueue, overShareQueue, lowPriorityClass, lowPriorityClass)
+			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
 			expectResizeEnactedAfterOneEviction(ctx, testCtx, setup)
 		})
 	})
