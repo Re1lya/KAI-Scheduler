@@ -576,6 +576,18 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 	return nil
 }
 
+// EvictedTasks returns the tasks whose eviction in this statement has not been undone.
+func (s *Statement) EvictedTasks() []*pod_info.PodInfo {
+	var tasks []*pod_info.PodInfo
+	for i, op := range s.operations {
+		if op.Name() != evict || !s.operationValid(i) {
+			continue
+		}
+		tasks = append(tasks, op.TaskInfo())
+	}
+	return tasks
+}
+
 func (s *Statement) clearOperations() {
 	s.operations = []Operation{}
 }

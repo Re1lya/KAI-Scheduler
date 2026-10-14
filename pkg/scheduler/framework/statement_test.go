@@ -1611,3 +1611,54 @@ func TestStatement_Pipeline_TaskNotInJob(t *testing.T) {
 	assert.NotContains(t, nodesInfoMap["node0"].PodInfos, pod_info.PodKey(staleTask.Pod), "task must not be added to the node")
 	assert.Equal(t, nodeBefore, extractNodeAssertedInfo(nodesInfoMap["node0"]), "node accounting must not change")
 }
+
+func TestStatement_EvictedTasks(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:      "job0",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 10000},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	pods := jobs["job0"].GetAllPodsMap()
+	task0, task1, task2 := pods["job0-0"], pods["job0-1"], pods["job0-2"]
+
+	evictedNames := func(stmt *Statement) []string {
+		var names []string
+		for _, task := range stmt.EvictedTasks() {
+			names = append(names, task.Name)
+		}
+		return names
+	}
+
+	stmt := session.Statement()
+	assert.Empty(t, stmt.EvictedTasks())
+
+	require.NoError(t, stmt.Evict(task0, "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Evict(task1, "", eviction_info.EvictionMetadata{}))
+	assert.Equal(t, []string{"job0-0", "job0-1"}, evictedNames(stmt))
+
+	require.NoError(t, stmt.Unevict(task0))
+	assert.Equal(t, []string{"job0-1"}, evictedNames(stmt))
+	assert.Equal(t, pod_status.Running, task0.Status)
+
+	cp := stmt.Checkpoint()
+	require.NoError(t, stmt.Evict(task2, "", eviction_info.EvictionMetadata{}))
+	assert.Equal(t, []string{"job0-1", "job0-2"}, evictedNames(stmt))
+
+	require.NoError(t, stmt.Rollback(cp))
+	assert.Equal(t, []string{"job0-1"}, evictedNames(stmt))
+
+	stmt.Discard()
+	assert.Empty(t, stmt.EvictedTasks())
+	assert.Equal(t, pod_status.Running, task1.Status)
+}
