@@ -50,6 +50,7 @@ type TestTaskBasic struct {
 	// ResizeStatus models an in-place resize: the job's per-task request becomes the desired
 	// (spec) size and these values the allocated/enacted size.
 	ResizeStatus *TestResizeStatus
+	HostPorts    []int32
 }
 
 // TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
@@ -149,6 +150,13 @@ func BuildPod(
 	maps.Copy(pod.Annotations, task.Annotations)
 
 	applyResizeStatus(pod, task.ResizeStatus)
+	for _, hostPort := range task.HostPorts {
+		pod.Spec.Containers[0].Ports = append(pod.Spec.Containers[0].Ports, v1.ContainerPort{
+			ContainerPort: hostPort,
+			HostPort:      hostPort,
+			Protocol:      v1.ProtocolTCP,
+		})
+	}
 
 	for _, claimName := range task.ResourceClaimNames {
 		pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims, v1.PodResourceClaim{
