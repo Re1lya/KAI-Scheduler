@@ -261,6 +261,26 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name: "resizing pod with anti-affinity to its own label fits back on its node",
+			Jobs: []*jobs_fake.TestJobBasic{
+				resizerWith(func(job *jobs_fake.TestJobBasic) {
+					job.Tasks[0].PodAffinityLabels = map[string]string{"app": "one-per-node"}
+					job.Tasks[0].PodAntiAffinityTopologyKey = v1.LabelHostname
+				}),
+				victim(),
+			},
+			Nodes: map[string]nodes_fake.TestNodeBasic{
+				"node0": {CPUMillis: 4, Labels: map[string]string{v1.LabelHostname: "node0"}},
+			},
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name: "a resize never evicts tasks of its own job",
 			Jobs: []*jobs_fake.TestJobBasic{
 				{
