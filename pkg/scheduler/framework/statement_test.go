@@ -1662,3 +1662,39 @@ func TestStatement_EvictedTasks(t *testing.T) {
 	assert.Empty(t, stmt.EvictedTasks())
 	assert.Equal(t, pod_status.Running, task1.Status)
 }
+
+func TestStatement_PipelineTaskEvictedByEnclosingStatement(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:                "job0",
+			QueueName:           "queue0",
+			RequiredCPUsPerTask: 2,
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 4},
+	}, tasksToNodes, nil, vectorMap)
+	session := &Session{ClusterInfo: &api.ClusterInfo{PodGroupInfos: jobs, Nodes: nodes}}
+	node := nodes["node0"]
+	task := jobs["job0"].GetAllPodsMap()["job0-0"]
+	idleBefore := node.IdleVector.Clone()
+	releasingBefore := node.ReleasingVector.Clone()
+
+	outer := session.Statement()
+	require.NoError(t, outer.Evict(task, "", eviction_info.EvictionMetadata{}))
+
+	inner := session.Statement()
+	require.NoError(t, inner.Pipeline(task, "node0", false))
+	assert.Equal(t, pod_status.Pipelined, task.Status)
+	assert.Equal(t, "node0", task.NodeName)
+
+	inner.Discard()
+	assert.Equal(t, pod_status.Releasing, task.Status)
+
+	outer.Discard()
+	assert.Equal(t, pod_status.Running, task.Status)
+	assert.Equal(t, idleBefore, node.IdleVector)
+	assert.Equal(t, releasingBefore, node.ReleasingVector)
+}
