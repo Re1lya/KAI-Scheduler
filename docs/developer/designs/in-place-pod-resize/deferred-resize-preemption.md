@@ -36,6 +36,8 @@ so an important workload can stay at its old size forever.
 
 For each job with deferred upsizes and no pending pods, per node:
 
+0. **Re-check the pods.** A pod evicted earlier in the same action, or no
+   longer deferred, is dropped from the attempt.
 1. **Skip if the node already has room.** If `idle + releasing ≥ 0` for cpu and
    memory, the kubelet will enact the resize on its own (for example, victims
    of an earlier round are still terminating). This prevents repeat evictions.
@@ -73,6 +75,9 @@ pending, so the two are never bundled. Resize-only jobs skip the
 ## Known limitations
 
 - Node-local only. KAI never migrates the resizing pod.
+- Full predicates, not resource fit only (unlike KEP-5836). A pod whose node
+  no longer passes its predicates (not ready, node affinity changed after
+  start, queue limit lowered) triggers no evictions. This is conservative.
 - Other deferred pods on the same node stay charged at their desired size
   during the search (conservative: may fail to find a solution that exists).
 - A job with both pending pods and a deferred resize places the pending pods
