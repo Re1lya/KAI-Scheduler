@@ -646,6 +646,15 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name:                     "cordoned node does not evict",
+			Jobs:                     []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
+			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Unschedulable: true}},
+			Queues:                   queues,
+			JobExpectedResults:       onlyRunning("node0", "resizer", "victim"),
+			Mocks:                    noEvictionMocks(),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name: "two resizing jobs on a node share the evictions",
 			Jobs: []*jobs_fake.TestJobBasic{
 				deferredResizeJob("resizer", "node0", 3, 1),

@@ -89,17 +89,29 @@ secured. The resizing pod is already charged at its desired size, so pending
 pods can only take room beyond what the resize needs. Resize-only jobs skip
 the "easier to schedule" signature cache, which is keyed on pending tasks.
 
+## Design choices
+
+- Node-local. An in-place resize cannot move a pod, so victims are only
+  searched on its node.
+- Full predicates, not resource fit only (unlike KEP-5836). This falls out of
+  reusing the preempt and reclaim solver; a resource-only check would need a
+  separate allocation mode in shared code. It also avoids pointless evictions:
+  on a cordoned or not-ready node nothing is evicted. The cost is that a pod
+  whose node changed under it (node affinity labels removed, a `NoSchedule`
+  taint added after it started) gets no evictions, where upstream would
+  preempt.
+- A job whose gang is not secured gets no evictions for its resizes.
+
 ## Known limitations
 
-- Node-local only. KAI never migrates the resizing pod.
-- Full predicates, not resource fit only (unlike KEP-5836). A pod whose node
-  no longer passes its predicates (not ready, node affinity changed after
-  start, queue limit lowered) triggers no evictions. This is conservative.
 - Other deferred pods on the same node stay charged at their desired size
-  during the search (conservative: may fail to find a solution that exists).
-- A job whose gang is not secured gets no evictions for its resizes.
+  during the search, so evictions happen only when every deferred resize on
+  the node can be met; there is no partial relief.
 - GPUs are never part of a resize delta.
-- Freed room is protected only from KAI: the resizing pod is charged at its
-  desired size, so KAI does not backfill it, also across scheduler restarts.
-  Pods placed by other schedulers can still take it before the kubelet
-  retries, and KAI then evicts again (same exposure as upstream alpha).
+- Freed room is reserved by charging the resizing pod at its desired size.
+  KAI and kube-scheduler (which uses the same effective-request accounting)
+  do not place other pods into it. A pod bound to the node directly (static
+  pod, or `spec.nodeName` set by a controller) can still take it before the
+  kubelet retries; the shortfall then reappears and KAI evicts other KAI-
+  scheduled pods for the same resize. KAI never evicts pods it does not
+  schedule.
