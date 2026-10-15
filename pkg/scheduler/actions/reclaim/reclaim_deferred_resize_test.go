@@ -217,6 +217,26 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name: "elastic job with two resizing pods above its gang minimum reclaims",
+			Jobs: []*jobs_fake.TestJobBasic{
+				func() *jobs_fake.TestJobBasic {
+					job := reclaimResizeJob(constants.PriorityTrainNumber, 2, 1)
+					job.RootSubGroupSet = jobs_fake.DefaultSubGroup(1)
+					job.Tasks = append(job.Tasks, &tasks_fake.TestTaskBasic{
+						State: pod_status.Running, NodeName: "node0",
+						ResizeStatus: &tasks_fake.TestResizeStatus{ActualCPUs: 1, Deferred: true},
+					})
+					return job
+				}(),
+				reclaimVictimJob(2),
+			},
+			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},
+			Queues:                   []test_utils.TestQueueBasic{cpuQueue("queue0", 4000), cpuQueue("queue1", 0)},
+			JobExpectedResults:       expect(pod_status.Running, pod_status.Releasing),
+			Mocks:                    mocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name:                     "victim protected by reclaim min-runtime",
 			Jobs:                     []*jobs_fake.TestJobBasic{reclaimResizeJob(constants.PriorityTrainNumber, 3, 1), reclaimVictimJob(2)},
 			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},

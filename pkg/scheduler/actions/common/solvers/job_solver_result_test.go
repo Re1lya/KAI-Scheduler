@@ -472,9 +472,19 @@ func TestSolveTasksWithResultSolvesOnlyGivenTasks(t *testing.T) {
 	require.Equal(t, SearchResultNoGenerator, result.Reason(), "given tasks reach the search")
 }
 
-func TestPinFeasibleNodes(t *testing.T) {
-	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
-	require.False(t, solver.pinnedFeasibleNodes)
+func TestPinFeasibleNodesExcludesRecordedVictimNodes(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	node0 := node_info.NewNodeInfo(common_info.BuildNode("node-0", common_info.BuildResourceList("4", "16Gi")), nil, vectorMap)
+	node1 := node_info.NewNodeInfo(common_info.BuildNode("node-1", common_info.BuildResourceList("4", "16Gi")), nil, vectorMap)
+	ssn := &framework.Session{ClusterInfo: &api.ClusterInfo{
+		Nodes: map[string]*node_info.NodeInfo{node0.Name: node0, node1.Name: node1},
+	}}
+	state := &solvingState{recordedVictimsTasks: []*pod_info.PodInfo{{NodeName: node1.Name}}}
+
+	solver := NewJobsSolver([]*node_info.NodeInfo{node0}, nil, nil, framework.Reclaim, nil)
+	require.Equal(t, map[string]*node_info.NodeInfo{node0.Name: node0, node1.Name: node1},
+		solver.probeFeasibleNodes(ssn, state))
+
 	require.Same(t, solver, solver.PinFeasibleNodes())
-	require.True(t, solver.pinnedFeasibleNodes)
+	require.Equal(t, map[string]*node_info.NodeInfo{node0.Name: node0}, solver.probeFeasibleNodes(ssn, state))
 }

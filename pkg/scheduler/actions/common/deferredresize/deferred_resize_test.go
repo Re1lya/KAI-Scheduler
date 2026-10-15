@@ -223,7 +223,7 @@ func TestAttempt_EvictsOnlyVictimsAndRestoresResizer(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
 
 	require.True(t, succeeded)
 	require.Equal(t, solvers.SearchResultSolved, result.Reason())
@@ -249,7 +249,7 @@ func TestAttempt_NodeAlreadyFits(t *testing.T) {
 
 	factoryCalled := false
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible,
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
 		func(*node_info.NodeInfo) *solvers.JobSolver { factoryCalled = true; return nil })
 
 	assert.True(t, succeeded)
@@ -266,7 +266,7 @@ func TestAttempt_FitsWhileEarlierVictimsTerminate(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
 
 	assert.True(t, succeeded)
 	assert.Empty(t, victims)
@@ -283,7 +283,7 @@ func TestAttempt_NotEligibleRestoresSession(t *testing.T) {
 		return false
 	}
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, eligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, eligible, preemptSolverFactory(ssn, job))
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -299,7 +299,7 @@ func TestAttempt_NoSolutionRestoresSession(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -315,7 +315,7 @@ func TestAttempt_InsufficientVictimsRestoresSession(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -333,7 +333,7 @@ func TestAttempt_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
 
 	factoryCalled := false
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible,
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
 		func(*node_info.NodeInfo) *solvers.JobSolver { factoryCalled = true; return nil })
 
 	assert.False(t, succeeded)
@@ -351,7 +351,7 @@ func TestAttempt_SkipsTaskVirtuallyEvictedByOpenStatement(t *testing.T) {
 	require.NoError(t, stmt.Evict(nodeTasks["node0"][0], "", eviction_info.EvictionMetadata{}))
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible,
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
 		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
 
 	assert.False(t, succeeded)
@@ -367,7 +367,7 @@ func TestAttempt_RepeatedFailuresKeepSessionStable(t *testing.T) {
 
 	for range 5 {
 		succeeded, _, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-			nodeTasks["node0"], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+			nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
 		require.False(t, succeeded)
 	}
 	requireUnchanged(t, before, ssn)
@@ -430,7 +430,7 @@ func TestAttempt_VictimInvariantPrePredicateFailureRestoresSession(t *testing.T)
 		return &api.VictimInvariantPrePredicateFailure{Err: errors.New("blocked")}
 	})
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible,
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
 		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
 
 	assert.Positive(t, calls)
@@ -462,7 +462,7 @@ func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {
 			ssn.PreemptScenarioValidator, victims, framework.Preempt, nil)
 	}
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"], framework.Preempt, alwaysEligible, unpinnedOnOtherNode)
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, unpinnedOnOtherNode)
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)

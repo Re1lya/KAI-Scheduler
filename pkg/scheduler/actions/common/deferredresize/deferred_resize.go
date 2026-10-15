@@ -10,6 +10,7 @@
 package deferredresize
 
 import (
+	"slices"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
@@ -71,7 +72,7 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 	return false
 }
 
-// AttemptForJob tries every node group of the job and reports whether the action should stop.
+// AttemptForJob tries each deferred task of the job and reports whether the action should stop.
 func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, nodeTasks NodeTasks,
 	actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
@@ -85,33 +86,39 @@ func AttemptForJob(
 
 	for _, nodeName := range nodeNames {
 		node := ssn.ClusterInfo.Nodes[nodeName]
-		metrics.IncPodgroupsConsideredByAction()
-		succeeded, victims, result := Attempt(ssn, job, node, nodeTasks[nodeName], actionType, eligible, newSolver)
-		if succeeded {
-			if len(victims) > 0 {
-				metrics.IncPodgroupScheduledByAction()
-				log.InfraLogger.V(3).Infof("Evicted <%v> for deferred resize of job <%s/%s> on node <%s>",
-					taskNames(victims), job.Namespace, job.Name, nodeName)
+		tasks := slices.Clone(nodeTasks[nodeName])
+		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
+		for _, task := range tasks {
+			metrics.IncPodgroupsConsideredByAction()
+			succeeded, victims, result := Attempt(ssn, job, node, task, actionType, eligible, newSolver)
+			if succeeded {
+				if len(victims) > 0 {
+					metrics.IncPodgroupScheduledByAction()
+					log.InfraLogger.V(3).Infof("Evicted <%v> for deferred resize of <%s/%s> on node <%s>",
+						taskNames(victims), task.Namespace, task.Name, nodeName)
+				}
+				continue
 			}
-			continue
+			if shouldStop(result) {
+				return true
+			}
+			log.InfraLogger.V(3).Infof("Didn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
+				actionType, task.Namespace, task.Name, nodeName)
 		}
-		if shouldStop(result) {
-			return true
-		}
-		log.InfraLogger.V(3).Infof("Didn't find a %s strategy for deferred resize of job <%s/%s> on node <%s>",
-			actionType, job.Namespace, job.Name, nodeName)
 	}
 	return false
 }
 
-// Attempt frees room on node for all the given deferred resize tasks of job, or for none.
+// Attempt frees room on node for one deferred resize task. Other deferred tasks on the node are
+// already charged at their desired size, so the task fits back only once the whole node shortfall
+// is covered; a single task is also always selected by the solver, whatever the job's gang minimum.
 // succeeded is true with no victims when the node already has room.
 func Attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
-	tasks []*pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
+	task *pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
-	tasks = currentDeferredTasks(job, tasks, node.Name)
-	if len(tasks) == 0 {
+	task = currentDeferredTask(job, task, node.Name)
+	if task == nil {
 		return false, nil, nil
 	}
 	if nodeFitsAfterReleasing(node) {
@@ -120,15 +127,14 @@ func Attempt(
 
 	self := ssn.Statement()
 	defer self.Discard()
-	for _, task := range tasks {
-		if err := self.Evict(task, "", eviction_info.EvictionMetadata{}); err != nil {
-			log.InfraLogger.Errorf("Failed to virtually evict deferred resize task <%s/%s>: %v",
-				task.Namespace, task.Name, err)
-			return false, nil, nil
-		}
+	if err := self.Evict(task, "", eviction_info.EvictionMetadata{}); err != nil {
+		log.InfraLogger.Errorf("Failed to virtually evict deferred resize task <%s/%s>: %v",
+			task.Namespace, task.Name, err)
+		return false, nil, nil
 	}
 
-	if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+	tasks := []*pod_info.PodInfo{task}
+	if _, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 		log.InfraLogger.V(3).Infof("Deferred resize task <%s/%s> can't trigger %s: %v",
 			task.Namespace, task.Name, actionType, failure.Err)
 		return false, nil, nil
@@ -142,7 +148,7 @@ func Attempt(
 		return false, nil, result
 	}
 	// JobSolver reports unsolved here since a Releasing task already counts as active.
-	solved := result.Reason() == solvers.SearchResultSolved && allPipelinedOnNode(job, tasks, node.Name)
+	solved := result.Reason() == solvers.SearchResultSolved && isPipelinedOnNode(job, task, node.Name)
 	victims = stmt.EvictedTasks()
 	stmt.Discard()
 	self.Discard()
@@ -152,8 +158,8 @@ func Attempt(
 
 	final := ssn.Statement()
 	if err := common.EvictAllPreemptees(ssn, victims, job, final, actionType); err != nil {
-		log.InfraLogger.Errorf("Failed to evict victims for deferred resize of job <%s/%s>: %v",
-			job.Namespace, job.Name, err)
+		log.InfraLogger.Errorf("Failed to evict victims for deferred resize of <%s/%s>: %v",
+			task.Namespace, task.Name, err)
 		final.Discard()
 		return false, nil, result
 	}
@@ -163,17 +169,12 @@ func Attempt(
 	return true, victims, result
 }
 
-// currentDeferredTasks re-resolves tasks against the job: earlier evictions in the same action
-// may have changed them since Jobs was computed, and statements may have swapped in clones.
-func currentDeferredTasks(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo, nodeName string) []*pod_info.PodInfo {
-	jobTasks := job.GetAllPodsMap()
-	current := make([]*pod_info.PodInfo, 0, len(tasks))
-	for _, task := range tasks {
-		jobTask, found := jobTasks[task.UID]
-		if !found || jobTask.IsVirtualStatus || jobTask.NodeName != nodeName || !pod_info.IsDeferredResizeTask(jobTask) {
-			continue
-		}
-		current = append(current, jobTask)
+// currentDeferredTask re-resolves the task against the job: earlier evictions in the same action
+// may have changed it since Jobs was computed, and statements may have swapped in a clone.
+func currentDeferredTask(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo, nodeName string) *pod_info.PodInfo {
+	current, found := job.GetAllPodsMap()[task.UID]
+	if !found || current.IsVirtualStatus || current.NodeName != nodeName || !pod_info.IsDeferredResizeTask(current) {
+		return nil
 	}
 	return current
 }
@@ -187,16 +188,10 @@ func nodeFitsAfterReleasing(node *node_info.NodeInfo) bool {
 	return true
 }
 
-// allPipelinedOnNode checks the job's current task objects; the solver pipelines clones.
-func allPipelinedOnNode(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo, nodeName string) bool {
-	jobTasks := job.GetAllPodsMap()
-	for _, task := range tasks {
-		current, found := jobTasks[task.UID]
-		if !found || current.Status != pod_status.Pipelined || current.NodeName != nodeName {
-			return false
-		}
-	}
-	return true
+// isPipelinedOnNode checks the job's current task object; the solver pipelines clones.
+func isPipelinedOnNode(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo, nodeName string) bool {
+	current, found := job.GetAllPodsMap()[task.UID]
+	return found && current.Status == pod_status.Pipelined && current.NodeName == nodeName
 }
 
 func taskNames(tasks []*pod_info.PodInfo) []string {

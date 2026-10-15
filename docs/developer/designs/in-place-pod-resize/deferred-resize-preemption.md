@@ -34,20 +34,21 @@ so an important workload can stay at its old size forever.
 
 ## Mechanism: virtual self-eviction
 
-For each job with deferred upsizes and no pending pods, per node:
+For each job with deferred upsizes and no pending pods, one deferred pod at a
+time:
 
-0. **Re-check the pods.** A pod evicted earlier in the same action, or no
-   longer deferred, is dropped from the attempt.
+0. **Re-check the pod.** A pod evicted earlier in the same action, or no
+   longer deferred, is skipped.
 1. **Skip if the node already has room.** If `idle + releasing ≥ 0` for cpu and
    memory, the kubelet will enact the resize on its own (for example, victims
    of an earlier round are still terminating). This prevents repeat evictions.
-2. **Virtually evict the resizing pods** inside a statement. They become
-   `Releasing` with a virtual status, so `ShouldAllocate` treats them as
-   pending at their charged (desired) size, and the queue is credited back.
+2. **Virtually evict the resizing pod** inside a statement. It becomes
+   `Releasing` with a virtual status, so `ShouldAllocate` treats it as
+   pending at its charged (desired) size, and the queue is credited back.
 3. **Run the action's eligibility checks** on the job in that state:
    victim-invariant pre-predicates, plus `IsNonPreemptibleJobOverQueueQuota`
    (preempt) or `CanReclaimResources` (reclaim).
-4. **Run the action's `JobSolver`** for exactly those tasks
+4. **Run the action's `JobSolver`** for exactly that pod
    (`SolveTasksWithResult`). It is pinned to the pod's node
    (`PinFeasibleNodes`) and uses victims from that node only. The pod fits
    back iff `used − releasing − victims ≤ allocatable`, which is exactly the
@@ -57,7 +58,13 @@ For each job with deferred upsizes and no pending pods, per node:
    (`Statement.EvictedTasks`), discard both statements, and evict only the
    victims in a fresh statement. The resizing pod is never evicted.
 
-Two small framework changes support this:
+One pod per attempt is enough: other deferred pods on the node are already
+charged at their desired size, so the pod fits back only once the whole node
+shortfall is covered, and the next pod on that node then skips at step 1. It
+also avoids the solver's elastic task selection, which adds pods above a
+gang's `minAvailable` one at a time.
+
+Framework changes that support this:
 
 - `Statement.Pipeline` unevicts only when this statement evicted the task. A
   task evicted by an enclosing statement is pipelined in place.

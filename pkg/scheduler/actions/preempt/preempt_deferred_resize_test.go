@@ -671,6 +671,53 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name: "elastic job with two resizing pods above its gang minimum resizes both",
+			Jobs: []*jobs_fake.TestJobBasic{
+				{
+					Name: "resizer", QueueName: "queue0", Priority: resizerPriority, RequiredCPUsPerTask: 2,
+					RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+					Tasks: []*tasks_fake.TestTaskBasic{
+						deferredResizeTask("node0", 1),
+						deferredResizeTask("node0", 1),
+					},
+				},
+				victim(),
+			},
+			Nodes:  cpuNodes("node0"),
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "elastic job with three resizing pods needing two victims",
+			Jobs: []*jobs_fake.TestJobBasic{
+				{
+					Name: "resizer", QueueName: "queue0", Priority: resizerPriority, RequiredCPUsPerTask: 2,
+					RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+					Tasks: []*tasks_fake.TestTaskBasic{
+						deferredResizeTask("node0", 1),
+						deferredResizeTask("node0", 1),
+						deferredResizeTask("node0", 1),
+					},
+				},
+				runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
+				runningCPUJob("victim2", "queue0", "node0", constants.PriorityTrainNumber, 1),
+			},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 6}},
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+				"victim2": pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(2),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name: "a resize never evicts tasks of its own job",
 			Jobs: []*jobs_fake.TestJobBasic{
 				{

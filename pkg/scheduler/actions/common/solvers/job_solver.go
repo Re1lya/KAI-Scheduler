@@ -338,16 +338,7 @@ func (s *JobSolver) solvePartialJob(
 		jobBudget = newUnlimitedActionSearchBudget(s.actionType).BeginJob()
 	}
 
-	feasibleNodeMap := map[string]*node_info.NodeInfo{}
-	for _, node := range s.feasibleNodes {
-		feasibleNodeMap[node.Name] = node
-	}
-	if !s.pinnedFeasibleNodes {
-		for _, task := range state.recordedVictimsTasks {
-			node := ssn.ClusterInfo.Nodes[task.NodeName]
-			feasibleNodeMap[task.NodeName] = node
-		}
-	}
+	feasibleNodeMap := s.probeFeasibleNodes(ssn, state)
 
 	solveCtx := &SolveContext{
 		Session:              ssn,
@@ -410,6 +401,20 @@ func (s *JobSolver) solvePartialJob(
 	}
 
 	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
+}
+
+// probeFeasibleNodes returns the solver's nodes plus, unless pinned, the nodes of recorded victims.
+func (s *JobSolver) probeFeasibleNodes(ssn *framework.Session, state *solvingState) map[string]*node_info.NodeInfo {
+	feasibleNodeMap := map[string]*node_info.NodeInfo{}
+	for _, node := range s.feasibleNodes {
+		feasibleNodeMap[node.Name] = node
+	}
+	if !s.pinnedFeasibleNodes {
+		for _, task := range state.recordedVictimsTasks {
+			feasibleNodeMap[task.NodeName] = ssn.ClusterInfo.Nodes[task.NodeName]
+		}
+	}
+	return feasibleNodeMap
 }
 
 func (s *JobSolver) observeActionBudgetExhausted() {
