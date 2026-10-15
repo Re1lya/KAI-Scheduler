@@ -76,16 +76,16 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		job := jobsOrderByQueues.PopNextJob()
 
 		if job.GetNumPendingTasks() > 0 {
-			if stop := ra.reclaimForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); stop {
+			if shouldStop := ra.reclaimForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
 				return
 			}
 		}
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
 		if nodeTasks, found := resizeJobs[job.UID]; found {
-			if stop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Reclaim,
+			if shouldStop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Reclaim,
 				isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
-				shouldStopActionForSearchResult); stop {
+				shouldStopActionForSearchResult); shouldStop {
 				return
 			}
 		}
@@ -95,7 +95,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 func (ra *reclaimAction) reclaimForPendingTasks(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 	smallestFailedJobsByQueue map[common_info.QueueID]*common.MinimalJobRepresentatives,
-) (stop bool) {
+) (shouldStop bool) {
 	if !ssn.CanReclaimResources(job) {
 		return false
 	}

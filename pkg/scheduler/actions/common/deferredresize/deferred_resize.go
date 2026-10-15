@@ -72,12 +72,13 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 	return false
 }
 
-// AttemptForJob tries each deferred task of the job and reports whether the action should stop.
+// AttemptForJob tries each deferred task of the job. It returns true when the action should stop,
+// as judged by shouldStopForResult on a failed attempt (e.g. the search budget is exhausted).
 func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, nodeTasks NodeTasks,
 	actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
-	shouldStop func(*solvers.SearchResult) bool,
-) bool {
+	shouldStopForResult func(*solvers.SearchResult) bool,
+) (shouldStop bool) {
 	nodeNames := make([]string, 0, len(nodeTasks))
 	for nodeName := range nodeTasks {
 		nodeNames = append(nodeNames, nodeName)
@@ -99,7 +100,7 @@ func AttemptForJob(
 				}
 				continue
 			}
-			if shouldStop(result) {
+			if shouldStopForResult(result) {
 				return true
 			}
 			log.InfraLogger.V(3).Infof("Didn't find a %s strategy for deferred resize of <%s/%s> on node <%s>",
