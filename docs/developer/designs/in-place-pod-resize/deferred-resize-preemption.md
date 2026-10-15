@@ -34,14 +34,23 @@ so an important workload can stay at its old size forever.
 
 ## Mechanism: virtual self-eviction
 
-For each job with deferred upsizes, one deferred pod at a time:
+Jobs with a deferred upsize enter the action's job queue even without
+pending pods (`NonPendingJobFilter`, set only when the flag is on). When any
+job is popped, after its pending pods (if any) were tried:
 
-0. **Re-check the pod and the gang.** The pod must still be `Running` with a
-   deferred upsize; a pod evicted or moved earlier in the session (for example
-   by consolidation) is skipped. So is any pod of a job whose
-   gang is not secured: its allocated (running, bound or pipelined) pods do
-   not meet `minAvailable` at every level. A job that is not working yet must
-   not evict others so one of its pods can grow.
+0. **Scan the job.** Nothing is cached from the start of the action. If the
+   job's gang is not secured (its allocated pods, i.e. running, bound or
+   pipelined, do not meet `minAvailable` at every level), nothing is
+   attempted: a job that is not working yet must not evict others so one of
+   its pods can grow. Otherwise its pods are scanned once, now: pods that are
+   still `Running` with a deferred upsize, on a known node, grouped by node
+   and sorted by name. Pods evicted or moved earlier in the session (for
+   example by consolidation) are no longer `Running` and drop out. The job's
+   own attempts never evict its own pods and discard their statements, so the
+   scanned pods stay current while the job's attempts run.
+
+Then, one deferred pod at a time:
+
 1. **Skip if the node already has room.** If `idle + releasing ≥ 0` for cpu and
    memory, the kubelet will enact the resize on its own (for example, victims
    of an earlier round are still terminating). This prevents repeat evictions.

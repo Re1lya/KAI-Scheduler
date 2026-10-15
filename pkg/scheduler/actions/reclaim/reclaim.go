@@ -21,7 +21,6 @@ package reclaim
 
 import (
 	"golang.org/x/exp/maps"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/deferredresize"
@@ -57,13 +56,12 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		return
 	}
 
-	resizeJobs := deferredresize.Jobs(ssn)
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Reclaim),
-		NonPendingJobsToInclude:     sets.KeySet(resizeJobs),
+		NonPendingJobFilter:         deferredresize.NonPendingJobFilter(ssn),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -82,12 +80,10 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		}
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
-		if nodeTasks, found := resizeJobs[job.UID]; found {
-			if shouldStop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Reclaim,
-				isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
-				shouldStopActionForSearchResult); shouldStop {
-				return
-			}
+		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Reclaim,
+			isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
+			shouldStopActionForSearchResult); shouldStop {
+			return
 		}
 	}
 }

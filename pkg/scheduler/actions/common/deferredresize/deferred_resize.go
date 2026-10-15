@@ -10,14 +10,12 @@
 package deferredresize
 
 import (
-	"slices"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -28,9 +26,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// NodeTasks groups the deferred resize tasks of one job by node name.
-type NodeTasks map[string][]*pod_info.PodInfo
-
 // SolverFactory builds a job solver restricted to a single node.
 type SolverFactory func(node *node_info.NodeInfo) *solvers.JobSolver
 
@@ -38,28 +33,23 @@ type SolverFactory func(node *node_info.NodeInfo) *solvers.JobSolver
 // virtually evicted.
 type Eligibility func(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool
 
-// Jobs returns the deferred resize tasks of every job, grouped by node. Empty when the
-// feature is disabled.
-func Jobs(ssn *framework.Session) map[common_info.PodGroupID]NodeTasks {
-	result := map[common_info.PodGroupID]NodeTasks{}
-	if !ssn.DeferredResizePreemptionEnabled() {
-		return result
-	}
-	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		for _, task := range job.GetAllPodsMap() {
-			if !pod_info.IsDeferredResizeTask(task) {
-				continue
-			}
-			if _, found := ssn.ClusterInfo.Nodes[task.NodeName]; !found {
-				continue
-			}
-			if result[job.UID] == nil {
-				result[job.UID] = NodeTasks{}
-			}
-			result[job.UID][task.NodeName] = append(result[job.UID][task.NodeName], task)
+// HasDeferredResize reports whether any pod of the job has a deferred in-place upsize.
+func HasDeferredResize(job *podgroup_info.PodGroupInfo) bool {
+	for _, task := range job.GetAllPodsMap() {
+		if pod_info.IsDeferredResizeTask(task) {
+			return true
 		}
 	}
-	return result
+	return false
+}
+
+// NonPendingJobFilter keeps jobs without pending pods in an action's job queue when they have
+// a deferred resize. It is nil when the feature is disabled.
+func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInfo) bool {
+	if !ssn.DeferredResizePreemptionEnabled() {
+		return nil
+	}
+	return HasDeferredResize
 }
 
 // HasActiveAllocatedTaskOnNode reports whether a candidate victim job can free room on the node.
@@ -72,24 +62,28 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 	return false
 }
 
-// AttemptForJob tries each deferred task of the job. It returns true when the action should stop,
-// as judged by shouldStopForResult on a failed attempt (e.g. the search budget is exhausted).
+// AttemptForJob tries each deferred task of the job, found by scanning the job when it is popped
+// so earlier evictions and moves in the session are taken into account. It returns true when the
+// action should stop, as judged by shouldStopForResult on a failed attempt (e.g. the search
+// budget is exhausted).
 func AttemptForJob(
-	ssn *framework.Session, job *podgroup_info.PodGroupInfo, nodeTasks NodeTasks,
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo,
 	actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 	shouldStopForResult func(*solvers.SearchResult) bool,
 ) (shouldStop bool) {
-	nodeNames := make([]string, 0, len(nodeTasks))
-	for nodeName := range nodeTasks {
+	if !ssn.DeferredResizePreemptionEnabled() || !IsGangSecured(job) {
+		return false
+	}
+	tasksByNode := deferredTasksByNode(ssn, job)
+	nodeNames := make([]string, 0, len(tasksByNode))
+	for nodeName := range tasksByNode {
 		nodeNames = append(nodeNames, nodeName)
 	}
 	sort.Strings(nodeNames)
 
 	for _, nodeName := range nodeNames {
 		node := ssn.ClusterInfo.Nodes[nodeName]
-		tasks := slices.Clone(nodeTasks[nodeName])
-		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
-		for _, task := range tasks {
+		for _, task := range tasksByNode[nodeName] {
 			metrics.IncPodgroupsConsideredByAction()
 			succeeded, victims, result := Attempt(ssn, job, node, task, actionType, eligible, newSolver)
 			if succeeded {
@@ -110,18 +104,36 @@ func AttemptForJob(
 	return false
 }
 
-// Attempt frees room on node for one deferred resize task. Other deferred tasks on the node are
-// already charged at their desired size, so the task fits back only once the whole node shortfall
-// is covered; a single task is also always selected by the solver, whatever the job's gang minimum.
-// succeeded is true with no victims when the node already has room.
+// deferredTasksByNode returns the job's deferred resize tasks on known nodes, grouped by node
+// and sorted by name.
+func deferredTasksByNode(ssn *framework.Session, job *podgroup_info.PodGroupInfo) map[string][]*pod_info.PodInfo {
+	tasksByNode := map[string][]*pod_info.PodInfo{}
+	for _, task := range job.GetAllPodsMap() {
+		if !pod_info.IsDeferredResizeTask(task) {
+			continue
+		}
+		if _, found := ssn.ClusterInfo.Nodes[task.NodeName]; !found {
+			continue
+		}
+		tasksByNode[task.NodeName] = append(tasksByNode[task.NodeName], task)
+	}
+	for _, tasks := range tasksByNode {
+		sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
+	}
+	return tasksByNode
+}
+
+// Attempt frees room on node for one deferred resize task, which must be current (as found by the
+// scan in AttemptForJob). One task per attempt is enough: other deferred tasks on the node are
+// already charged at their desired size, so this task fits back only once the whole node
+// shortfall is covered. It also matters for correctness: with several tasks, the solver re-picks
+// them by the job's gang rule and may place only some, but one task is the only one it can pick.
+// The job's own attempts never evict its own pods and discard their statements, so the task stays
+// current across the job's attempts. succeeded is true with no victims when the node already has room.
 func Attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
-	task = currentDeferredTask(job, task)
-	if task == nil || !IsGangSecured(job) {
-		return false, nil, nil
-	}
 	if nodeFitsAfterReleasing(node) {
 		return true, nil, nil
 	}
@@ -180,16 +192,6 @@ func IsGangSecured(job *podgroup_info.PodGroupInfo) bool {
 // resizing tasks, so job-level checks do not count the demand of its pending pods.
 func ResizeRepresentative(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
 	return job.CloneWithTasks(append(job.GetAllAllocatedPods(), tasks...))
-}
-
-// currentDeferredTask re-resolves the task against the job: since Jobs was computed, earlier
-// actions in the session may have evicted or moved it, and statements may have swapped in a clone.
-func currentDeferredTask(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo) *pod_info.PodInfo {
-	current, found := job.GetAllPodsMap()[task.UID]
-	if !found || !pod_info.IsDeferredResizeTask(current) {
-		return nil
-	}
-	return current
 }
 
 func nodeFitsAfterReleasing(node *node_info.NodeInfo) bool {

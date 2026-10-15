@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/sets"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -26,8 +24,9 @@ type JobsOrderInitOptions struct {
 	FilterWithinPreemptionDelay bool
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
-	// NonPendingJobsToInclude are kept by FilterNonPending even without pending tasks.
-	NonPendingJobsToInclude sets.Set[common_info.PodGroupID]
+	// NonPendingJobFilter keeps a job without pending tasks despite FilterNonPending when it
+	// returns true. Nil drops all such jobs.
+	NonPendingJobFilter func(*podgroup_info.PodGroupInfo) bool
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
@@ -39,7 +38,7 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 		}
 
 		if jobsOrder.options.FilterNonPending && len(job.PodStatusIndex[pod_status.Pending]) == 0 &&
-			!jobsOrder.options.NonPendingJobsToInclude.Has(job.UID) {
+			(jobsOrder.options.NonPendingJobFilter == nil || !jobsOrder.options.NonPendingJobFilter(job)) {
 			continue
 		}
 

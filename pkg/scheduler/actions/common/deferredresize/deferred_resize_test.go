@@ -159,11 +159,28 @@ func requireUnchanged(t *testing.T, before sessionSnapshot, ssn *framework.Sessi
 	assert.Equal(t, before.queueCPU, after.queueCPU, "queue allocated cpu")
 }
 
-func resizerTasks(ssn *framework.Session) (*podgroup_info.PodGroupInfo, deferredresize.NodeTasks) {
-	return ssn.ClusterInfo.PodGroupInfos["resizer"], deferredresize.Jobs(ssn)["resizer"]
+// resizerTasks returns the resizer job and its deferred tasks by node, as the pop-time scan finds them.
+func resizerTasks(ssn *framework.Session) (*podgroup_info.PodGroupInfo, map[string][]*pod_info.PodInfo) {
+	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
+	tasksByNode := map[string][]*pod_info.PodInfo{}
+	for _, task := range job.GetAllPodsMap() {
+		if pod_info.IsDeferredResizeTask(task) {
+			tasksByNode[task.NodeName] = append(tasksByNode[task.NodeName], task)
+		}
+	}
+	return job, tasksByNode
 }
 
-func TestJobs(t *testing.T) {
+func failIfSolverRuns(t *testing.T) deferredresize.SolverFactory {
+	return func(*node_info.NodeInfo) *solvers.JobSolver {
+		t.Fatal("solver must not run")
+		return nil
+	}
+}
+
+func neverStop(*solvers.SearchResult) bool { return false }
+
+func scanTopology() test_utils.TestTopologyBasic {
 	topology := baseTopology()
 	topology.Jobs = append(topology.Jobs,
 		&jobs_fake.TestJobBasic{
@@ -171,6 +188,7 @@ func TestJobs(t *testing.T) {
 			QueueName:           "queue0",
 			Priority:            resizerPriority,
 			RequiredCPUsPerTask: 1,
+			RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 			Tasks: []*tasks_fake.TestTaskBasic{
 				deferredTask("node0", 0.5),
 				deferredTask("node1", 0.5),
@@ -180,26 +198,65 @@ func TestJobs(t *testing.T) {
 					State: pod_status.Running, NodeName: "node1",
 					ResizeStatus: &tasks_fake.TestResizeStatus{ActualCPUs: 0.5, Infeasible: true},
 				},
+				deferredTask("missing", 0.5),
 			},
 		},
 		&jobs_fake.TestJobBasic{
-			Name:                "unknown-node",
+			Name:                "no-resize",
 			QueueName:           "queue0",
 			RequiredCPUsPerTask: 1,
-			Tasks:               []*tasks_fake.TestTaskBasic{deferredTask("missing", 0.5)},
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node1"}},
 		},
 	)
-	ssn := buildSession(t, topology)
+	return topology
+}
 
-	jobs := deferredresize.Jobs(ssn)
-	require.Len(t, jobs, 2)
-	assert.Len(t, jobs["resizer"]["node0"], 1)
-	assert.Len(t, jobs["multi"]["node0"], 1)
-	assert.Len(t, jobs["multi"]["node1"], 2)
-	assert.NotContains(t, jobs, common_info.PodGroupID("unknown-node"))
+func TestHasDeferredResize(t *testing.T) {
+	ssn := buildSession(t, scanTopology())
+
+	assert.True(t, deferredresize.HasDeferredResize(ssn.ClusterInfo.PodGroupInfos["resizer"]))
+	assert.True(t, deferredresize.HasDeferredResize(ssn.ClusterInfo.PodGroupInfos["multi"]))
+	assert.False(t, deferredresize.HasDeferredResize(ssn.ClusterInfo.PodGroupInfos["no-resize"]))
+	assert.False(t, deferredresize.HasDeferredResize(ssn.ClusterInfo.PodGroupInfos["victim"]))
+}
+
+func TestNonPendingJobFilter(t *testing.T) {
+	ssn := buildSession(t, scanTopology())
+
+	filter := deferredresize.NonPendingJobFilter(ssn)
+	require.NotNil(t, filter)
+	assert.True(t, filter(ssn.ClusterInfo.PodGroupInfos["resizer"]))
+	assert.False(t, filter(ssn.ClusterInfo.PodGroupInfos["no-resize"]))
 
 	ssn.OverrideDeferredResizePreemption(false)
-	assert.Empty(t, deferredresize.Jobs(ssn))
+	assert.Nil(t, deferredresize.NonPendingJobFilter(ssn), "flag off keeps the job queue as on main")
+}
+
+func TestAttemptForJob_ScansDeferredTasksOnKnownNodesInOrder(t *testing.T) {
+	ssn := buildSession(t, scanTopology())
+	job := ssn.ClusterInfo.PodGroupInfos["multi"]
+
+	var tried []string
+	recordNode := func(node *node_info.NodeInfo) *solvers.JobSolver {
+		tried = append(tried, node.Name)
+		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, nil, nil, framework.Preempt, nil)
+	}
+	// Both nodes are short on room, so every deferred task reaches the solver: node0's one, then
+	// node1's two. The Infeasible, non-resizing and unknown-node pods are not attempted.
+	deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, recordNode, neverStop)
+	assert.Equal(t, []string{"node0", "node1", "node1"}, tried)
+}
+
+func TestAttemptForJob_FeatureDisabled(t *testing.T) {
+	ssn := buildSession(t, baseTopology())
+	ssn.OverrideDeferredResizePreemption(false)
+	before := snapshot(ssn)
+
+	stopped := deferredresize.AttemptForJob(ssn, ssn.ClusterInfo.PodGroupInfos["resizer"], framework.Preempt,
+		alwaysEligible, failIfSolverRuns(t), neverStop)
+
+	assert.False(t, stopped)
+	requireUnchanged(t, before, ssn)
 }
 
 func TestHasActiveAllocatedTaskOnNode(t *testing.T) {
@@ -322,8 +379,14 @@ func TestAttempt_InsufficientVictimsRestoresSession(t *testing.T) {
 	requireUnchanged(t, before, ssn)
 }
 
-func TestAttempt_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
-	ssn := buildSession(t, baseTopology())
+func TestAttemptForJob_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
+	topology := baseTopology()
+	// Keeps node0 short even after the resizer's own room is released.
+	topology.Jobs = append(topology.Jobs, runningJob("other", "node0", resizerPriority+1, 3))
+	// A second running pod keeps the gang secured, so only the scan can skip the evicted pod.
+	topology.Jobs[0].RootSubGroupSet = jobs_fake.DefaultSubGroup(1)
+	topology.Jobs[0].Tasks = append(topology.Jobs[0].Tasks, &tasks_fake.TestTaskBasic{State: pod_status.Running, NodeName: "node1"})
+	ssn := buildSession(t, topology)
 	job, nodeTasks := resizerTasks(ssn)
 
 	stmt := ssn.Statement()
@@ -331,18 +394,14 @@ func TestAttempt_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
 	require.NoError(t, stmt.Commit())
 	before := snapshot(ssn)
 
-	factoryCalled := false
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
-		func(*node_info.NodeInfo) *solvers.JobSolver { factoryCalled = true; return nil })
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+		failIfSolverRuns(t), neverStop)
 
-	assert.False(t, succeeded)
-	assert.Empty(t, victims)
-	assert.False(t, factoryCalled)
+	assert.False(t, stopped)
 	requireUnchanged(t, before, ssn)
 }
 
-func TestAttempt_SkipsTaskMovedEarlierInTheSession(t *testing.T) {
+func TestAttemptForJob_SkipsTaskMovedEarlierInTheSession(t *testing.T) {
 	topology := baseTopology()
 	topology.Mocks = &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
 		NumberOfCacheEvictions: 1, NumberOfPipelineActions: 1,
@@ -361,12 +420,10 @@ func TestAttempt_SkipsTaskMovedEarlierInTheSession(t *testing.T) {
 	require.True(t, hasDeferredCondition(moved), "the pod still carries the kubelet's Deferred condition")
 	before := snapshot(ssn)
 
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		resizer, framework.Preempt, alwaysEligible,
-		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+		failIfSolverRuns(t), neverStop)
 
-	assert.False(t, succeeded)
-	assert.Empty(t, victims)
+	assert.False(t, stopped)
 	requireUnchanged(t, before, ssn)
 }
 
@@ -408,13 +465,13 @@ func TestAttemptForJob_TriesNodesInOrderAndStops(t *testing.T) {
 		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, nil, nil, framework.Preempt, nil)
 	}
 
-	stopped := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Preempt, alwaysEligible, noGenerator,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, noGenerator,
 		func(result *solvers.SearchResult) bool { return result.Reason() == solvers.SearchResultNoGenerator })
 	assert.True(t, stopped)
 	assert.Equal(t, []string{"node0"}, tried)
 
 	tried = nil
-	stopped = deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Preempt, alwaysEligible, noGenerator,
+	stopped = deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, noGenerator,
 		func(*solvers.SearchResult) bool { return false })
 	assert.False(t, stopped)
 	assert.Equal(t, []string{"node0", "node1"}, tried)
@@ -426,9 +483,9 @@ func TestAttemptForJob_EachNodeIndependently(t *testing.T) {
 	topology.Jobs[0].Tasks = []*tasks_fake.TestTaskBasic{deferredTask("node0", 1), deferredTask("node1", 1)}
 	topology.Jobs = append(topology.Jobs, runningJob("protected", "node1", resizerPriority+1, 2))
 	ssn := buildSession(t, topology)
-	job, nodeTasks := resizerTasks(ssn)
+	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
 
-	stopped := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Preempt, alwaysEligible,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
 		preemptSolverFactory(ssn, job), func(*solvers.SearchResult) bool { return false })
 
 	assert.False(t, stopped)
@@ -542,19 +599,17 @@ func TestResizeRepresentativeDropsPendingPods(t *testing.T) {
 	assert.Equal(t, 1, job.GetNumPendingTasks(), "the original job is unchanged")
 }
 
-func TestAttempt_GangNotSecuredRestoresSession(t *testing.T) {
+func TestAttemptForJob_GangNotSecuredRestoresSession(t *testing.T) {
 	topology := baseTopology()
 	topology.Jobs[0].RootSubGroupSet = jobs_fake.DefaultSubGroup(2)
 	topology.Jobs[0].Tasks = append(topology.Jobs[0].Tasks, &tasks_fake.TestTaskBasic{State: pod_status.Pending})
 	ssn := buildSession(t, topology)
-	job, nodeTasks := resizerTasks(ssn)
+	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
 	before := snapshot(ssn)
 
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
-		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+		failIfSolverRuns(t), neverStop)
 
-	assert.False(t, succeeded)
-	assert.Empty(t, victims)
+	assert.False(t, stopped)
 	requireUnchanged(t, before, ssn)
 }
