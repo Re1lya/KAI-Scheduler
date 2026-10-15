@@ -34,11 +34,13 @@ so an important workload can stay at its old size forever.
 
 ## Mechanism: virtual self-eviction
 
-For each job with deferred upsizes and no pending pods, one deferred pod at a
-time:
+For each job with deferred upsizes, one deferred pod at a time:
 
-0. **Re-check the pod.** A pod evicted earlier in the same action, or no
-   longer deferred, is skipped.
+0. **Re-check the pod and the gang.** A pod evicted earlier in the same
+   action, or no longer deferred, is skipped. So is any pod of a job whose
+   gang is not secured: its allocated (running, bound or pipelined) pods do
+   not meet `minAvailable` at every level. A job that is not working yet must
+   not evict others so one of its pods can grow.
 1. **Skip if the node already has room.** If `idle + releasing ≥ 0` for cpu and
    memory, the kubelet will enact the resize on its own (for example, victims
    of an earlier round are still terminating). This prevents repeat evictions.
@@ -47,7 +49,9 @@ time:
    pending at its charged (desired) size, and the queue is credited back.
 3. **Run the action's eligibility checks** on the job in that state:
    victim-invariant pre-predicates, plus `IsNonPreemptibleJobOverQueueQuota`
-   (preempt) or `CanReclaimResources` (reclaim).
+   for the resizing pod (preempt) or `CanReclaimResources` on a copy of the
+   job holding only its allocated pods and the resizing pod (reclaim), so the
+   demand of its pending pods is not counted.
 4. **Run the action's `JobSolver`** for exactly that pod
    (`SolveTasksWithResult`). It is pinned to the pod's node
    (`PinFeasibleNodes`) and uses victims from that node only. The pod fits
@@ -78,10 +82,12 @@ Framework changes that support this:
 ## Ordering
 
 Both preempt and reclaim run the deferred attempt after the regular attempt
-for the same popped job, each with its own statement and commit. A job with
-pending pods places them first; its resize is attempted only once nothing is
-pending, so the two are never bundled. Resize-only jobs skip the
-"easier to schedule" signature cache, which is keyed on pending tasks.
+for the same popped job, each with its own statement and commit, so the two
+are never solved together. Pending pods get the first pick of victims; the
+resize is then tried whether or not they were placed, as long as the gang is
+secured. The resizing pod is already charged at its desired size, so pending
+pods can only take room beyond what the resize needs. Resize-only jobs skip
+the "easier to schedule" signature cache, which is keyed on pending tasks.
 
 ## Known limitations
 
@@ -91,8 +97,7 @@ pending, so the two are never bundled. Resize-only jobs skip the
   start, queue limit lowered) triggers no evictions. This is conservative.
 - Other deferred pods on the same node stay charged at their desired size
   during the search (conservative: may fail to find a solution that exists).
-- A job with both pending pods and a deferred resize places the pending pods
-  first.
+- A job whose gang is not secured gets no evictions for its resizes.
 - GPUs are never part of a resize delta.
 - Freed room is protected only from KAI: the resizing pod is charged at its
   desired size, so KAI does not backfill it, also across scheduler restarts.

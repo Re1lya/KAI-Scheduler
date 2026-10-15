@@ -126,7 +126,7 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name: "job with unschedulable pending tasks does not reclaim for its resize",
+			Name: "unschedulable pending pod does not block the resize of a secured gang",
 			Jobs: []*jobs_fake.TestJobBasic{
 				func() *jobs_fake.TestJobBasic {
 					job := reclaimResizeJob(constants.PriorityTrainNumber, 3, 1)
@@ -141,13 +141,13 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},
 			Queues: []test_utils.TestQueueBasic{cpuQueue("queue0", 6000), cpuQueue("queue1", 0)},
 			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
-				"victim": {NodeName: "node0", Status: pod_status.Running},
+				"victim": {NodeName: "node0", Status: pod_status.Releasing},
 			},
 			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 				"resizer-0": {NodeName: "node0", Status: pod_status.Running},
 				"resizer-1": {Status: pod_status.Pending},
 			},
-			Mocks:                    mocks(0),
+			Mocks:                    mocks(1),
 			DeferredResizePreemption: true,
 		},
 		{

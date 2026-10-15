@@ -115,7 +115,7 @@ Limitations:
 
 - Victims are only searched on the resizing pod's node; KAI never moves the pod to another node.
 - The resizing pod must still pass scheduling checks on its node (node readiness, node affinity, pod affinity, host ports, queue limits). If the node no longer qualifies, for example after its labels changed, KAI evicts nothing.
-- A job that also has pending pods places those first; its deferred resize is handled once nothing is pending.
+- A job's pending pods are placed first. Its deferred resizes are handled afterwards, whether or not the pending pods were placed, but only once the job has enough allocated pods to meet its gang minimum.
 - Other deferred pods on the same node stay charged at their desired size during the search, which is conservative.
 - GPU resources are never part of a resize.
 

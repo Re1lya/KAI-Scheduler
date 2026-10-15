@@ -295,7 +295,7 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name: "job with unschedulable pending tasks does not preempt for its resize",
+			Name: "unschedulable pending pod does not block the resize of a secured gang",
 			Jobs: []*jobs_fake.TestJobBasic{
 				{
 					Name:                "resizer",
@@ -313,6 +313,34 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 			Nodes:  cpuNodes("node0"),
 			Queues: queues,
 			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"victim": {NodeName: "node0", Status: pod_status.Releasing},
+			},
+			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer-0": {NodeName: "node0", Status: pod_status.Running},
+				"resizer-1": {Status: pod_status.Pending},
+			},
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "gang not yet secured does not evict for a resize",
+			Jobs: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "resizer",
+					QueueName:           "queue0",
+					Priority:            resizerPriority,
+					RequiredCPUsPerTask: 3,
+					RootSubGroupSet:     jobs_fake.DefaultSubGroup(2),
+					Tasks: []*tasks_fake.TestTaskBasic{
+						deferredResizeTask("node0", 1),
+						{State: pod_status.Pending, NodeAffinityNames: []string{"missing"}},
+					},
+				},
+				runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
+			},
+			Nodes:  cpuNodes("node0"),
+			Queues: queues,
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 				"victim": {NodeName: "node0", Status: pod_status.Running},
 			},
 			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
@@ -320,6 +348,39 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 				"resizer-1": {Status: pod_status.Pending},
 			},
 			Mocks:                    noEvictionMocks(),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "pending pod is placed first and the resize needs no extra eviction",
+			Jobs: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "resizer",
+					QueueName:           "queue0",
+					Priority:            resizerPriority,
+					RequiredCPUsPerTask: 3,
+					RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
+					Tasks: []*tasks_fake.TestTaskBasic{
+						deferredResizeTask("node0", 1),
+						{State: pod_status.Pending},
+					},
+				},
+				runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 3),
+				runningCPUJob("victim2", "queue0", "node0", constants.PriorityTrainNumber-10, 3),
+			},
+			// 1 CPU short for the resize; the pending pod needs both victims, which also cover the resize.
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 8}},
+			Queues: queues,
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"victim":  {NodeName: "node0", Status: pod_status.Releasing},
+				"victim2": {NodeName: "node0", Status: pod_status.Releasing},
+			},
+			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer-0": {NodeName: "node0", Status: pod_status.Running},
+				"resizer-1": {NodeName: "node0", Status: pod_status.Pipelined},
+			},
+			Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheEvictions: 2, NumberOfPipelineActions: 1,
+			}},
 			DeferredResizePreemption: true,
 		},
 		{

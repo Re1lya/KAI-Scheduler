@@ -81,7 +81,8 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			}
 		}
 
-		if nodeTasks, found := resizeJobs[job.UID]; found && job.GetNumPendingTasks() == 0 {
+		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
+		if nodeTasks, found := resizeJobs[job.UID]; found {
 			if stop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Reclaim,
 				isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
 				shouldStopActionForSearchResult); stop {
@@ -141,8 +142,8 @@ func (ra *reclaimAction) reclaimForPendingTasks(
 }
 
 func isEligibleForDeferredResize(ssn *framework.Session) deferredresize.Eligibility {
-	return func(job *podgroup_info.PodGroupInfo, _ []*pod_info.PodInfo) bool {
-		return ssn.CanReclaimResources(job)
+	return func(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool {
+		return ssn.CanReclaimResources(deferredresize.ResizeRepresentative(job, tasks))
 	}
 }
 

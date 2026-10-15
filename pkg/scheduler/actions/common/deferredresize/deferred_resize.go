@@ -118,7 +118,7 @@ func Attempt(
 	task *pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
 	task = currentDeferredTask(job, task, node.Name)
-	if task == nil {
+	if task == nil || !IsGangSecured(job) {
 		return false, nil, nil
 	}
 	if nodeFitsAfterReleasing(node) {
@@ -167,6 +167,18 @@ func Attempt(
 		log.InfraLogger.Errorf("Failed to commit %s statement for deferred resize: %v", actionType, err)
 	}
 	return true, victims, result
+}
+
+// IsGangSecured reports whether the job meets its gang minimum with allocated pods. A job that
+// is not yet working must not evict others so that one of its pods can grow.
+func IsGangSecured(job *podgroup_info.PodGroupInfo) bool {
+	return job.RootSubGroupSet != nil && job.RootSubGroupSet.IsMinRequirementSatisfied()
+}
+
+// ResizeRepresentative returns a copy of the job with only its allocated pods and the given
+// resizing tasks, so job-level checks do not count the demand of its pending pods.
+func ResizeRepresentative(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
+	return job.CloneWithTasks(append(job.GetAllAllocatedPods(), tasks...))
 }
 
 // currentDeferredTask re-resolves the task against the job: earlier evictions in the same action

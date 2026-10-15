@@ -468,3 +468,72 @@ func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {
 	assert.Empty(t, victims)
 	requireUnchanged(t, before, ssn)
 }
+
+func TestIsGangSecured(t *testing.T) {
+	topology := baseTopology()
+	topology.Jobs = append(topology.Jobs,
+		&jobs_fake.TestJobBasic{
+			Name: "unsecured", QueueName: "queue0", RequiredCPUsPerTask: 1,
+			RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node1"},
+				{State: pod_status.Pending},
+			},
+		},
+		&jobs_fake.TestJobBasic{
+			Name: "terminating", QueueName: "queue0", RequiredCPUsPerTask: 1,
+			RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node1"},
+				{State: pod_status.Releasing, NodeName: "node1"},
+			},
+		},
+	)
+	ssn := buildSession(t, topology)
+
+	assert.True(t, deferredresize.IsGangSecured(ssn.ClusterInfo.PodGroupInfos["resizer"]))
+	assert.False(t, deferredresize.IsGangSecured(ssn.ClusterInfo.PodGroupInfos["unsecured"]))
+	assert.False(t, deferredresize.IsGangSecured(ssn.ClusterInfo.PodGroupInfos["terminating"]),
+		"pods being deleted do not secure the gang")
+}
+
+func TestResizeRepresentativeDropsPendingPods(t *testing.T) {
+	topology := baseTopology()
+	topology.Jobs[0].RootSubGroupSet = jobs_fake.DefaultSubGroup(1)
+	topology.Jobs[0].Tasks = append(topology.Jobs[0].Tasks,
+		&tasks_fake.TestTaskBasic{State: pod_status.Running, NodeName: "node1"},
+		&tasks_fake.TestTaskBasic{State: pod_status.Pending},
+	)
+	ssn := buildSession(t, topology)
+	job, nodeTasks := resizerTasks(ssn)
+	resizing := nodeTasks["node0"][0]
+
+	stmt := ssn.Statement()
+	defer stmt.Discard()
+	require.NoError(t, stmt.Evict(resizing, "", eviction_info.EvictionMetadata{}))
+
+	representative := deferredresize.ResizeRepresentative(job, []*pod_info.PodInfo{resizing})
+	assert.Equal(t, job.UID, representative.UID)
+	assert.Equal(t, job.Queue, representative.Queue)
+	assert.Zero(t, representative.GetNumPendingTasks())
+	assert.Len(t, representative.GetAllPodsMap(), 2, "allocated pod and resizing pod")
+	assert.Contains(t, representative.GetAllPodsMap(), resizing.UID)
+	assert.Equal(t, 1, job.GetNumPendingTasks(), "the original job is unchanged")
+}
+
+func TestAttempt_GangNotSecuredRestoresSession(t *testing.T) {
+	topology := baseTopology()
+	topology.Jobs[0].RootSubGroupSet = jobs_fake.DefaultSubGroup(2)
+	topology.Jobs[0].Tasks = append(topology.Jobs[0].Tasks, &tasks_fake.TestTaskBasic{State: pod_status.Pending})
+	ssn := buildSession(t, topology)
+	job, nodeTasks := resizerTasks(ssn)
+	before := snapshot(ssn)
+
+	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
+		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
+
+	assert.False(t, succeeded)
+	assert.Empty(t, victims)
+	requireUnchanged(t, before, ssn)
+}

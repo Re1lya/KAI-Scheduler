@@ -81,7 +81,8 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 			}
 		}
 
-		if nodeTasks, found := resizeJobs[job.UID]; found && job.GetNumPendingTasks() == 0 {
+		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
+		if nodeTasks, found := resizeJobs[job.UID]; found {
 			if stop := deferredresize.AttemptForJob(ssn, job, nodeTasks, framework.Preempt,
 				isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
 				shouldStopActionForSearchResult); stop {
