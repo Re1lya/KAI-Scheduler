@@ -342,20 +342,41 @@ func TestAttempt_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
 	requireUnchanged(t, before, ssn)
 }
 
-func TestAttempt_SkipsTaskVirtuallyEvictedByOpenStatement(t *testing.T) {
-	ssn := buildSession(t, baseTopology())
+func TestAttempt_SkipsTaskMovedEarlierInTheSession(t *testing.T) {
+	topology := baseTopology()
+	topology.Mocks = &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+		NumberOfCacheEvictions: 1, NumberOfPipelineActions: 1,
+	}}
+	ssn := buildSession(t, topology)
 	job, nodeTasks := resizerTasks(ssn)
+	resizer := nodeTasks["node0"][0]
 
+	// Consolidation moving the pod to node1, as committed before preempt and reclaim run.
 	stmt := ssn.Statement()
-	defer stmt.Discard()
-	require.NoError(t, stmt.Evict(nodeTasks["node0"][0], "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Evict(resizer, "", eviction_info.EvictionMetadata{}))
+	require.NoError(t, stmt.Pipeline(resizer, "node1", false))
+	require.NoError(t, stmt.Commit())
+	moved := job.GetAllPodsMap()[resizer.UID]
+	require.Equal(t, pod_status.Pipelined, moved.Status)
+	require.True(t, hasDeferredCondition(moved), "the pod still carries the kubelet's Deferred condition")
+	before := snapshot(ssn)
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
+		resizer, framework.Preempt, alwaysEligible,
 		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
+	requireUnchanged(t, before, ssn)
+}
+
+func hasDeferredCondition(task *pod_info.PodInfo) bool {
+	for _, c := range task.Pod.Status.Conditions {
+		if c.Type == v1.PodResizePending {
+			return c.Reason == v1.PodReasonDeferred
+		}
+	}
+	return false
 }
 
 func TestAttempt_RepeatedFailuresKeepSessionStable(t *testing.T) {

@@ -36,8 +36,9 @@ so an important workload can stay at its old size forever.
 
 For each job with deferred upsizes, one deferred pod at a time:
 
-0. **Re-check the pod and the gang.** A pod evicted earlier in the same
-   action, or no longer deferred, is skipped. So is any pod of a job whose
+0. **Re-check the pod and the gang.** The pod must still be `Running` with a
+   deferred upsize; a pod evicted or moved earlier in the session (for example
+   by consolidation) is skipped. So is any pod of a job whose
    gang is not secured: its allocated (running, bound or pipelined) pods do
    not meet `minAvailable` at every level. A job that is not working yet must
    not evict others so one of its pods can grow.

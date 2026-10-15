@@ -16,10 +16,11 @@ const PodResizePreemptionDisabled v1.PodConditionType = "PodResizePreemptionDisa
 
 var resizableResources = []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory}
 
-// IsDeferredResizeTask reports whether an active task has a kubelet-Deferred in-place resize
-// that still asks for more cpu or memory than the kubelet has allocated or enacted.
+// IsDeferredResizeTask reports whether a running task has a kubelet-Deferred in-place resize
+// that still asks for more cpu or memory than the kubelet has allocated or enacted. Any other
+// status means the session is evicting, moving or still starting the pod.
 func IsDeferredResizeTask(task *PodInfo) bool {
-	if task == nil || task.Pod == nil || !pod_status.IsActiveAllocatedStatus(task.Status) {
+	if task == nil || task.Pod == nil || task.Status != pod_status.Running {
 		return false
 	}
 	pod := task.Pod

@@ -80,6 +80,16 @@ func TestIsDeferredResizeTask(t *testing.T) {
 			task: resizeTask(pod_status.Pending, "2", "1", "1", deferred),
 			want: false,
 		},
+		{
+			name: "pipelined task",
+			task: resizeTask(pod_status.Pipelined, "2", "1", "1", deferred),
+			want: false,
+		},
+		{
+			name: "bound task not started yet",
+			task: resizeTask(pod_status.Bound, "2", "1", "1", deferred),
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

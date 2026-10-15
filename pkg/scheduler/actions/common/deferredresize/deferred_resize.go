@@ -118,7 +118,7 @@ func Attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, actionType framework.ActionType, eligible Eligibility, newSolver SolverFactory,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
-	task = currentDeferredTask(job, task, node.Name)
+	task = currentDeferredTask(job, task)
 	if task == nil || !IsGangSecured(job) {
 		return false, nil, nil
 	}
@@ -182,11 +182,11 @@ func ResizeRepresentative(job *podgroup_info.PodGroupInfo, tasks []*pod_info.Pod
 	return job.CloneWithTasks(append(job.GetAllAllocatedPods(), tasks...))
 }
 
-// currentDeferredTask re-resolves the task against the job: earlier evictions in the same action
-// may have changed it since Jobs was computed, and statements may have swapped in a clone.
-func currentDeferredTask(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo, nodeName string) *pod_info.PodInfo {
+// currentDeferredTask re-resolves the task against the job: since Jobs was computed, earlier
+// actions in the session may have evicted or moved it, and statements may have swapped in a clone.
+func currentDeferredTask(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo) *pod_info.PodInfo {
 	current, found := job.GetAllPodsMap()[task.UID]
-	if !found || current.IsVirtualStatus || current.NodeName != nodeName || !pod_info.IsDeferredResizeTask(current) {
+	if !found || !pod_info.IsDeferredResizeTask(current) {
 		return nil
 	}
 	return current
