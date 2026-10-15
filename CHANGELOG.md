@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.5] - 2026-10-11
+
+### Added
+- Helm chart OCI tags without v prefix, enabling semver ranges like ~0.18.0 [#2393](https://github.com/kai-scheduler/KAI-Scheduler/issues/2393) [gshaibi](https://github.com/gshaibi)
+
+### Fixed
+- Fix background pod displacement by preserving namespaced PodGroup identities in node snapshots. [#2367](https://github.com/kai-scheduler/KAI-Scheduler/issues/2367) [itsomri](https://github.com/itsomri)
+
+## [v0.18.4] - 2026-10-11
+
+### Changed
+- Updated gpu-fractioning chart dependency to v0.1.7 [#2353](https://github.com/kai-scheduler/KAI-Scheduler/issues/2353) [barakle1](https://github.com/barakle1)
+
+### Fixed
+- Fix fair-share distribution of over-quota resources to prioritize higher-priority queues [#2278](https://github.com/kai-scheduler/KAI-Scheduler/issues/2278) [karangupta982](https://github.com/karangupta982)
+- Scheduler no longer drops Evict events on PodGroups that repeatedly emit Unschedulable, StaleJob or NotReady events [JacobTheJacobs](https://github.com/JacobTheJacobs)
+- CRD upgrade now fails early, naming the CRD, when stale storedVersions would break the apply [#2381](https://github.com/kai-scheduler/KAI-Scheduler/issues/2381) [SiorMeir](https://github.com/SiorMeir)
+
 ## [v0.18.3] - 2026-10-06
 
 ### Changed
