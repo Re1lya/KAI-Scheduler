@@ -66,8 +66,12 @@ gang's `minAvailable` one at a time.
 
 Framework changes that support this:
 
-- `Statement.Pipeline` unevicts only when this statement evicted the task. A
-  task evicted by an enclosing statement is pipelined in place.
+- `Statement.Pipeline` used to treat a task already on the target node as one
+  it had evicted itself, and undo that eviction. It now does so only when the
+  eviction is in the same statement. The resizing pod is evicted in an outer
+  statement, because the solver opens and discards its own statements per
+  scenario and would otherwise undo it. So the solver's statement pipelines it
+  on its node normally; this case previously always failed.
 - The solver pipelines clones of the job's tasks, so success is checked on the
   job's current task objects.
 
