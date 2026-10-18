@@ -133,6 +133,12 @@ wraps the test-generated result without flattening either object:
   },
   "results": {
     "status": "success",
+    "service_client_config": {
+      "binder": {
+        "k8sClientConfig": { "qps": 500, "burst": 2000 },
+        "maxConcurrentReconciles": 100
+      }
+    },
     "tests": [
       {
         "test_name": "Fill Cluster with single GPU Jobs",
@@ -147,6 +153,12 @@ wraps the test-generated result without flattening either object:
   }
 }
 ```
+
+The scale test writes `service_client_config` from the live `kai-config`
+`Config` CR: each service's effective `k8sClientConfig` (qps/burst) and
+`maxConcurrentReconciles`, with API defaults applied, so a setting the API
+server dropped shows up as the default actually in use. The dashboard shows it
+as run metadata unless the wrapper metadata already has that field.
 
 The dashboard renders every retained metadata and `details` field and uses the
 test-specific timing field for historical graphs. Results with the same test

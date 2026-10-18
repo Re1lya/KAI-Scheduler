@@ -61,6 +61,40 @@
   },
   "results": {
     "status": "success",
+    "service_client_config": {
+      "admission": {
+        "k8sClientConfig": {
+          "burst": 100,
+          "qps": 20
+        }
+      },
+      "binder": {
+        "k8sClientConfig": {
+          "burst": 2000,
+          "qps": 500
+        },
+        "maxConcurrentReconciles": 100
+      },
+      "podGroupController": {
+        "k8sClientConfig": {
+          "burst": 100,
+          "qps": 20
+        }
+      },
+      "podGrouper": {
+        "k8sClientConfig": {
+          "burst": 1000,
+          "qps": 500
+        },
+        "maxConcurrentReconciles": 50
+      },
+      "queueController": {
+        "k8sClientConfig": {
+          "burst": 100,
+          "qps": 20
+        }
+      }
+    },
     "tests": [
       {
         "test_name": "Allocate with preferred topology",
