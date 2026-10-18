@@ -129,16 +129,16 @@ wraps the test-generated result without flattening either object:
     "kai_commit_hash": "aa514fc997453d075067e4aceae9319909c92ed6",
     "kwok_node_count": 500,
     "cluster_node_count": 5,
-    "service_resources": {}
-  },
-  "results": {
-    "status": "success",
+    "service_resources": {},
     "service_client_config": {
       "binder": {
         "k8sClientConfig": { "qps": 500, "burst": 2000 },
         "maxConcurrentReconciles": 100
       }
-    },
+    }
+  },
+  "results": {
+    "status": "success",
     "tests": [
       {
         "test_name": "Fill Cluster with single GPU Jobs",
@@ -157,8 +157,9 @@ wraps the test-generated result without flattening either object:
 The scale test writes `service_client_config` from the live `kai-config`
 `Config` CR: each service's effective `k8sClientConfig` (qps/burst) and
 `maxConcurrentReconciles`, with API defaults applied, so a setting the API
-server dropped shows up as the default actually in use. The dashboard shows it
-as run metadata unless the wrapper metadata already has that field.
+server dropped shows up as the default actually in use. The test writes it to
+its own results, and the upload workflow moves it into `metadata`. The
+dashboard also shows it as run metadata when it is still in `results`.
 
 The dashboard renders every retained metadata and `details` field and uses the
 test-specific timing field for historical graphs. Results with the same test

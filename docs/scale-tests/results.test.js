@@ -15,7 +15,7 @@ const {
 
 const scalePayload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'), 'utf8'));
 const scaleResults = scalePayload.results;
-const { service_client_config: serviceClientConfig, ...resultsWithoutClientConfig } = scaleResults;
+const serviceClientConfig = scalePayload.metadata.service_client_config;
 const ginkgoPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));
 const meta = {
   timestamp: '2026-06-29T08:42:33Z',
@@ -50,7 +50,7 @@ test('keeps the commit hash when an empty scheduler ref is removed', () => {
       nested: { remove: '', keep: 'value' },
       values: ['', 'keep'],
     },
-    results: resultsWithoutClientConfig,
+    results: scaleResults,
   };
 
   const run = loadRun(payload, meta);
@@ -62,33 +62,41 @@ test('keeps the commit hash when an empty scheduler ref is removed', () => {
   assert.equal(payload.metadata.nested.remove, '');
 });
 
-test('shows the recorded service client config as run metadata', () => {
+test('keeps service client config from the run metadata', () => {
   const run = loadRun(scalePayload, meta);
   assert.deepEqual(run.metadata.service_client_config, serviceClientConfig);
   assert.equal(run.metadata.service_client_config.binder.k8sClientConfig.qps, 500);
-  assert.equal(scalePayload.metadata.service_client_config, undefined);
 });
 
-test('prefers service client config from the run wrapper', () => {
-  const wrapperConfig = { binder: { k8sClientConfig: { qps: 1, burst: 2 } } };
+test('shows service client config the wrapper left in the results', () => {
+  const { service_client_config: _, ...metadata } = scalePayload.metadata;
   const payload = {
-    metadata: { ...scalePayload.metadata, service_client_config: wrapperConfig },
-    results: scaleResults,
+    metadata,
+    results: { ...scaleResults, service_client_config: serviceClientConfig },
   };
-  assert.deepEqual(loadRun(payload, meta).metadata.service_client_config, wrapperConfig);
+  assert.deepEqual(loadRun(payload, meta).metadata.service_client_config, serviceClientConfig);
+});
+
+test('prefers service client config from the run metadata', () => {
+  const resultsConfig = { binder: { k8sClientConfig: { qps: 1, burst: 2 } } };
+  const payload = {
+    metadata: scalePayload.metadata,
+    results: { ...scaleResults, service_client_config: resultsConfig },
+  };
+  assert.deepEqual(loadRun(payload, meta).metadata.service_client_config, serviceClientConfig);
 });
 
 test('loads an earlier unwrapped scale result as a compatibility input', () => {
-  const run = loadRun(resultsWithoutClientConfig, meta);
+  const run = loadRun(scaleResults, meta);
   assert.equal(run.kind, 'scale-results');
-  assert.strictEqual(run.payload, resultsWithoutClientConfig);
-  assert.strictEqual(run.result, resultsWithoutClientConfig);
+  assert.strictEqual(run.payload, scaleResults);
+  assert.strictEqual(run.result, scaleResults);
   assert.equal(run.metadata, null);
 });
 
 test('shows service client config from an unwrapped scale result', () => {
-  const run = loadRun(scaleResults, meta);
-  assert.deepEqual(run.metadata, { service_client_config: serviceClientConfig });
+  const results = { ...scaleResults, service_client_config: serviceClientConfig };
+  assert.deepEqual(loadRun(results, meta).metadata, { service_client_config: serviceClientConfig });
 });
 
 test('loads a Ginkgo report before the compatibility cutoff', () => {

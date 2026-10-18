@@ -57,10 +57,7 @@
           "memory": "2000Mi"
         }
       }
-    }
-  },
-  "results": {
-    "status": "success",
+    },
     "service_client_config": {
       "admission": {
         "k8sClientConfig": {
@@ -94,7 +91,10 @@
           "qps": 20
         }
       }
-    },
+    }
+  },
+  "results": {
+    "status": "success",
     "tests": [
       {
         "test_name": "Allocate with preferred topology",

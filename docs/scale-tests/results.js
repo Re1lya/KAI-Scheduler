@@ -63,7 +63,7 @@
     return sanitized;
   }
 
-  // The scale test records service client config in its own results; the run wrapper adds the rest.
+  // The scale test records service client config in its results; the upload workflow moves it to metadata.
   function runMetadata(metadata, result) {
     const serviceClientConfig = result.service_client_config;
     if (!metadata && !serviceClientConfig) return null;
