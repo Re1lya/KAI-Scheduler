@@ -22,7 +22,7 @@ import (
 	"github.com/kai-scheduler/api/constants"
 )
 
-var _ = Describe("Reclaim with pod anti-affinity", Label("nightly"), func() {
+var _ = Describe("Reclaim with releasing pod anti-affinity", Label("nightly"), func() {
 	It("evicts only one PodGroup while its pods terminate across scheduling cycles", func(ctx context.Context) {
 		testCtx := testcontext.GetConnectivity(ctx, Default)
 		DeferCleanup(func(ctx context.Context) { testCtx.ClusterCleanup(ctx) })
