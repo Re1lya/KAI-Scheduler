@@ -87,8 +87,8 @@ func lowerPriorityOnNode(ssn *framework.Session, preemptor *podgroup_info.PodGro
 	}
 }
 
-func preemptSolverFactory(ssn *framework.Session, job *podgroup_info.PodGroupInfo) deferredresize.SolverFactory {
-	return func(node *node_info.NodeInfo) *solvers.JobSolver {
+func preemptSolve(ssn *framework.Session) deferredresize.Solve {
+	return withSolver(ssn, func(job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) *solvers.JobSolver {
 		filter := lowerPriorityOnNode(ssn, job, node.Name)
 		victims := utils.NewCachedVictimsQueueGenerator(ssn,
 			func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
@@ -98,10 +98,27 @@ func preemptSolverFactory(ssn *framework.Session, job *podgroup_info.PodGroupInf
 		)
 		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, ssn.PreemptScenarioValidator, victims,
 			framework.Preempt, nil).PinFeasibleNodes()
+	})
+}
+
+func withSolver(
+	ssn *framework.Session, newSolver func(*podgroup_info.PodGroupInfo, *node_info.NodeInfo) *solvers.JobSolver,
+) deferredresize.Solve {
+	return func(
+		job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
+	) (*framework.Statement, *solvers.SearchResult) {
+		_, stmt, _, result := newSolver(job, node).SolveTasksWithResult(ssn, job, []*pod_info.PodInfo{task})
+		return stmt, result
 	}
 }
 
-func alwaysEligible(*podgroup_info.PodGroupInfo, []*pod_info.PodInfo) bool { return true }
+// noGeneratorSolve runs a solver that has no victims generator, recording the nodes it ran for.
+func noGeneratorSolve(ssn *framework.Session, tried *[]string) deferredresize.Solve {
+	return withSolver(ssn, func(_ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) *solvers.JobSolver {
+		*tried = append(*tried, node.Name)
+		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, nil, nil, framework.Preempt, nil)
+	})
+}
 
 type taskState struct {
 	ptr             *pod_info.PodInfo
@@ -171,10 +188,12 @@ func resizerTasks(ssn *framework.Session) (*podgroup_info.PodGroupInfo, map[stri
 	return job, tasksByNode
 }
 
-func failIfSolverRuns(t *testing.T) deferredresize.SolverFactory {
-	return func(*node_info.NodeInfo) *solvers.JobSolver {
+func failIfSolverRuns(t *testing.T) deferredresize.Solve {
+	return func(
+		*podgroup_info.PodGroupInfo, *node_info.NodeInfo, *pod_info.PodInfo,
+	) (*framework.Statement, *solvers.SearchResult) {
 		t.Fatal("solver must not run")
-		return nil
+		return nil, nil
 	}
 }
 
@@ -237,13 +256,9 @@ func TestAttemptForJob_ScansDeferredTasksOnKnownNodesInOrder(t *testing.T) {
 	job := ssn.ClusterInfo.PodGroupInfos["multi"]
 
 	var tried []string
-	recordNode := func(node *node_info.NodeInfo) *solvers.JobSolver {
-		tried = append(tried, node.Name)
-		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, nil, nil, framework.Preempt, nil)
-	}
 	// Both nodes are short on room, so every deferred task reaches the solver: node0's one, then
 	// node1's two. The Infeasible, non-resizing and unknown-node pods are not attempted.
-	deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, recordNode, neverStop)
+	deferredresize.AttemptForJob(ssn, job, framework.Preempt, noGeneratorSolve(ssn, &tried), neverStop)
 	assert.Equal(t, []string{"node0", "node1", "node1"}, tried)
 }
 
@@ -253,7 +268,7 @@ func TestAttemptForJob_FeatureDisabled(t *testing.T) {
 	before := snapshot(ssn)
 
 	stopped := deferredresize.AttemptForJob(ssn, ssn.ClusterInfo.PodGroupInfos["resizer"], framework.Preempt,
-		alwaysEligible, failIfSolverRuns(t), neverStop)
+		failIfSolverRuns(t), neverStop)
 
 	assert.False(t, stopped)
 	requireUnchanged(t, before, ssn)
@@ -280,7 +295,7 @@ func TestAttempt_EvictsOnlyVictimsAndRestoresResizer(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	require.True(t, succeeded)
 	require.Equal(t, solvers.SearchResultSolved, result.Reason())
@@ -304,15 +319,12 @@ func TestAttempt_NodeAlreadyFits(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	factoryCalled := false
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
-		func(*node_info.NodeInfo) *solvers.JobSolver { factoryCalled = true; return nil })
+		nodeTasks["node0"][0], framework.Preempt, failIfSolverRuns(t))
 
 	assert.True(t, succeeded)
 	assert.Empty(t, victims)
 	assert.Nil(t, result)
-	assert.False(t, factoryCalled)
 	requireUnchanged(t, before, ssn)
 }
 
@@ -323,28 +335,30 @@ func TestAttempt_FitsWhileEarlierVictimsTerminate(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	assert.True(t, succeeded)
 	assert.Empty(t, victims)
 }
 
-func TestAttempt_NotEligibleRestoresSession(t *testing.T) {
+func TestAttempt_NoSolutionFromSolveRestoresSession(t *testing.T) {
 	ssn := buildSession(t, baseTopology())
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	var eligibilitySawReleasing bool
-	eligible := func(_ *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool {
-		eligibilitySawReleasing = tasks[0].Status == pod_status.Releasing && tasks[0].IsVirtualStatus
-		return false
+	var solveSawReleasing bool
+	declining := func(
+		_ *podgroup_info.PodGroupInfo, _ *node_info.NodeInfo, task *pod_info.PodInfo,
+	) (*framework.Statement, *solvers.SearchResult) {
+		solveSawReleasing = task.Status == pod_status.Releasing && task.IsVirtualStatus
+		return nil, nil
 	}
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, eligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, declining)
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
-	assert.True(t, eligibilitySawReleasing, "eligibility must run with the resizer virtually evicted")
+	assert.True(t, solveSawReleasing, "solve must run with the resizer virtually evicted")
 	requireUnchanged(t, before, ssn)
 }
 
@@ -356,7 +370,7 @@ func TestAttempt_NoSolutionRestoresSession(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -372,7 +386,7 @@ func TestAttempt_InsufficientVictimsRestoresSession(t *testing.T) {
 	before := snapshot(ssn)
 
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -394,7 +408,7 @@ func TestAttemptForJob_SkipsTaskEvictedEarlierInTheAction(t *testing.T) {
 	require.NoError(t, stmt.Commit())
 	before := snapshot(ssn)
 
-	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
 		failIfSolverRuns(t), neverStop)
 
 	assert.False(t, stopped)
@@ -420,7 +434,7 @@ func TestAttemptForJob_SkipsTaskMovedEarlierInTheSession(t *testing.T) {
 	require.True(t, hasDeferredCondition(moved), "the pod still carries the kubelet's Deferred condition")
 	before := snapshot(ssn)
 
-	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
 		failIfSolverRuns(t), neverStop)
 
 	assert.False(t, stopped)
@@ -445,7 +459,7 @@ func TestAttempt_RepeatedFailuresKeepSessionStable(t *testing.T) {
 
 	for range 5 {
 		succeeded, _, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-			nodeTasks["node0"][0], framework.Preempt, alwaysEligible, preemptSolverFactory(ssn, job))
+			nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 		require.False(t, succeeded)
 	}
 	requireUnchanged(t, before, ssn)
@@ -460,18 +474,15 @@ func TestAttemptForJob_TriesNodesInOrderAndStops(t *testing.T) {
 	require.Len(t, nodeTasks, 2)
 
 	var tried []string
-	noGenerator := func(node *node_info.NodeInfo) *solvers.JobSolver {
-		tried = append(tried, node.Name)
-		return solvers.NewJobsSolver([]*node_info.NodeInfo{node}, nil, nil, framework.Preempt, nil)
-	}
+	noGenerator := noGeneratorSolve(ssn, &tried)
 
-	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, noGenerator,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, noGenerator,
 		func(result *solvers.SearchResult) bool { return result.Reason() == solvers.SearchResultNoGenerator })
 	assert.True(t, stopped)
 	assert.Equal(t, []string{"node0"}, tried)
 
 	tried = nil
-	stopped = deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible, noGenerator,
+	stopped = deferredresize.AttemptForJob(ssn, job, framework.Preempt, noGenerator,
 		func(*solvers.SearchResult) bool { return false })
 	assert.False(t, stopped)
 	assert.Equal(t, []string{"node0", "node1"}, tried)
@@ -485,8 +496,8 @@ func TestAttemptForJob_EachNodeIndependently(t *testing.T) {
 	ssn := buildSession(t, topology)
 	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
 
-	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
-		preemptSolverFactory(ssn, job), func(*solvers.SearchResult) bool { return false })
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
+		preemptSolve(ssn), func(*solvers.SearchResult) bool { return false })
 
 	assert.False(t, stopped)
 	assert.Equal(t, pod_status.Releasing, ssn.ClusterInfo.PodGroupInfos["victim"].GetAllPodsMap()["victim-0"].Status)
@@ -508,8 +519,7 @@ func TestAttempt_VictimInvariantPrePredicateFailureRestoresSession(t *testing.T)
 		return &api.VictimInvariantPrePredicateFailure{Err: errors.New("blocked")}
 	})
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible,
-		func(*node_info.NodeInfo) *solvers.JobSolver { t.Fatal("solver must not run"); return nil })
+		nodeTasks["node0"][0], framework.Preempt, failIfSolverRuns(t))
 
 	assert.Positive(t, calls)
 	assert.False(t, succeeded)
@@ -527,7 +537,7 @@ func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	unpinnedOnOtherNode := func(node *node_info.NodeInfo) *solvers.JobSolver {
+	unpinnedOnOtherNode := withSolver(ssn, func(*podgroup_info.PodGroupInfo, *node_info.NodeInfo) *solvers.JobSolver {
 		victims := utils.NewCachedVictimsQueueGenerator(ssn,
 			func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
 				return utils.GetVictimCandidates(ssn, func(victim *podgroup_info.PodGroupInfo) bool {
@@ -538,9 +548,9 @@ func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {
 		)
 		return solvers.NewJobsSolver([]*node_info.NodeInfo{ssn.ClusterInfo.Nodes["node1"]},
 			ssn.PreemptScenarioValidator, victims, framework.Preempt, nil)
-	}
+	})
 	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, alwaysEligible, unpinnedOnOtherNode)
+		nodeTasks["node0"][0], framework.Preempt, unpinnedOnOtherNode)
 
 	assert.False(t, succeeded)
 	assert.Empty(t, victims)
@@ -607,7 +617,7 @@ func TestAttemptForJob_GangNotSecuredRestoresSession(t *testing.T) {
 	job := ssn.ClusterInfo.PodGroupInfos["resizer"]
 	before := snapshot(ssn)
 
-	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt, alwaysEligible,
+	stopped := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
 		failIfSolverRuns(t), neverStop)
 
 	assert.False(t, stopped)

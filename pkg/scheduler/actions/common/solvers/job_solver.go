@@ -96,17 +96,9 @@ func (s *JobSolver) Solve(
 func (s *JobSolver) SolveWithResult(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
 ) (solved bool, statement *framework.Statement, victimTaskNames []string, searchResult *SearchResult) {
-	defer func() {
-		if searchResult != nil {
-			metrics.IncScenarioSearchJobs(
-				s.actionType, searchResult.scenarioSearchMetricResult(), searchResult.ReducedBudget(),
-			)
-		}
-	}()
-
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
 		podgroup_info.SimulatedTaskAllocation)
-	return s.solveTasks(ssn, pendingJob, tasksToAllocate)
+	return s.SolveTasksWithResult(ssn, pendingJob, tasksToAllocate)
 }
 
 // SolveTasksWithResult solves for the given tasks of pendingJob instead of the tasks selected by
@@ -121,12 +113,7 @@ func (s *JobSolver) SolveTasksWithResult(
 			)
 		}
 	}()
-	return s.solveTasks(ssn, pendingJob, tasksToAllocate)
-}
 
-func (s *JobSolver) solveTasks(
-	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo,
-) (bool, *framework.Statement, []string, *SearchResult) {
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 	n := len(tasksToAllocate)
 	if n == 0 {

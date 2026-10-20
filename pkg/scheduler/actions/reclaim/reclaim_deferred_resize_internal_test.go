@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -32,7 +33,7 @@ func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
 	require.True(t, queue.IsEmpty())
 }
 
-func TestIsEligibleForDeferredResizeUsesCanReclaimResourcesWithoutPendingPods(t *testing.T) {
+func TestSolveDeferredResizeChecksCanReclaimResourcesWithoutPendingPods(t *testing.T) {
 	ssn, reclaimer, _, _ := newVictimQueueTestSession()
 	addTask := func(name, nodeName string, phase v1.PodPhase) *pod_info.PodInfo {
 		pod := common_info.BuildPod("victim-queue-test", name, nodeName, phase,
@@ -45,6 +46,7 @@ func TestIsEligibleForDeferredResizeUsesCanReclaimResourcesWithoutPendingPods(t 
 	resizing := addTask("resizing-pod", "node-0", v1.PodRunning)
 	addTask("pending-pod", "", v1.PodPending)
 	require.Equal(t, 1, reclaimer.GetNumPendingTasks())
+	node := &node_info.NodeInfo{Name: "node-0"}
 
 	canReclaim := false
 	var gotJob *podgroup_info.PodGroupInfo
@@ -52,22 +54,20 @@ func TestIsEligibleForDeferredResizeUsesCanReclaimResourcesWithoutPendingPods(t 
 		gotJob = job
 		return canReclaim
 	})
+	solutionStarts := 0
+	ssn.AddOnJobSolutionStartFn(func() { solutionStarts++ })
 
-	require.False(t, isEligibleForDeferredResize(ssn)(reclaimer, []*pod_info.PodInfo{resizing}))
+	stmt, result := solveDeferredResize(ssn, nil)(reclaimer, node, resizing)
+	require.Nil(t, stmt)
+	require.Nil(t, result, "the solver must not run")
+	require.Zero(t, solutionStarts)
 	require.Equal(t, reclaimer.UID, gotJob.UID)
 	require.Zero(t, gotJob.GetNumPendingTasks(), "pending pods' demand must not count")
 	require.Contains(t, gotJob.GetAllPodsMap(), resizing.UID)
 
 	canReclaim = true
-	require.True(t, isEligibleForDeferredResize(ssn)(reclaimer, []*pod_info.PodInfo{resizing}))
-}
-
-func TestDeferredResizeSolverStartsJobSolution(t *testing.T) {
-	ssn, reclaimer, _, _ := newVictimQueueTestSession()
-	calls := 0
-	ssn.AddOnJobSolutionStartFn(func() { calls++ })
-
-	solver := newDeferredResizeSolver(ssn, reclaimer, nil)(&node_info.NodeInfo{Name: "node-0"})
-	require.NotNil(t, solver)
-	require.Equal(t, 1, calls)
+	stmt, result = solveDeferredResize(ssn, nil)(reclaimer, node, resizing)
+	require.Nil(t, stmt)
+	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason(), "the solver ran")
+	require.Equal(t, 1, solutionStarts)
 }

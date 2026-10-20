@@ -81,8 +81,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
 		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Reclaim,
-			isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
-			shouldStopActionForSearchResult); shouldStop {
+			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
 			return
 		}
 	}
@@ -137,24 +136,25 @@ func (ra *reclaimAction) reclaimForPendingTasks(
 	return false
 }
 
-func isEligibleForDeferredResize(ssn *framework.Session) deferredresize.Eligibility {
-	return func(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool {
-		return ssn.CanReclaimResources(deferredresize.ResizeRepresentative(job, tasks))
-	}
-}
-
-func newDeferredResizeSolver(
-	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
-) deferredresize.SolverFactory {
-	return func(node *node_info.NodeInfo) *solvers.JobSolver {
+// solveDeferredResize counts only the job's allocated pods and the resizing pod toward the reclaim
+// check, not the demand of its pending pods.
+func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) deferredresize.Solve {
+	return func(
+		job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
+	) (*framework.Statement, *solvers.SearchResult) {
+		tasks := []*pod_info.PodInfo{task}
+		if !ssn.CanReclaimResources(deferredresize.ResizeRepresentative(job, tasks)) {
+			return nil, nil
+		}
 		ssn.OnJobSolutionStart()
-		return solvers.NewJobsSolver(
+		_, statement, _, result := solvers.NewJobsSolver(
 			[]*node_info.NodeInfo{node},
 			ssn.ReclaimScenarioValidatorFn,
 			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
 			framework.Reclaim,
 			actionBudget,
-		).PinFeasibleNodes()
+		).PinFeasibleNodes().SolveTasksWithResult(ssn, job, tasks)
+		return statement, result
 	}
 }
 

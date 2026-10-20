@@ -81,8 +81,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
 		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
-			isEligibleForDeferredResize(ssn), newDeferredResizeSolver(ssn, job, actionBudget),
-			shouldStopActionForSearchResult); shouldStop {
+			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
 			return
 		}
 	}
@@ -134,28 +133,24 @@ func preemptForPendingTasks(
 	return false
 }
 
-func isEligibleForDeferredResize(ssn *framework.Session) deferredresize.Eligibility {
-	return func(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) bool {
+func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) deferredresize.Solve {
+	return func(
+		job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
+	) (*framework.Statement, *solvers.SearchResult) {
+		tasks := []*pod_info.PodInfo{task}
 		if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(job, tasks); !result.IsSchedulable {
 			log.InfraLogger.V(3).Infof("Deferred resize of job <%v/%v> would place the queue over quota",
 				job.Namespace, job.Name)
-			return false
+			return nil, nil
 		}
-		return true
-	}
-}
-
-func newDeferredResizeSolver(
-	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
-) deferredresize.SolverFactory {
-	return func(node *node_info.NodeInfo) *solvers.JobSolver {
-		return solvers.NewJobsSolver(
+		_, statement, _, result := solvers.NewJobsSolver(
 			[]*node_info.NodeInfo{node},
 			ssn.PreemptScenarioValidator,
 			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
 			framework.Preempt,
 			actionBudget,
-		).PinFeasibleNodes()
+		).PinFeasibleNodes().SolveTasksWithResult(ssn, job, tasks)
+		return statement, result
 	}
 }
 

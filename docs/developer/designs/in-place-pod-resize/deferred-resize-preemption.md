@@ -43,10 +43,10 @@ job is popped, after its pending pods (if any) were tried:
    pipelined, do not meet `minAvailable` at every level), nothing is
    attempted: a job that is not working yet must not evict others so one of
    its pods can grow. Otherwise its pods are scanned once, now: pods that are
-   still `Running` with a deferred upsize, on a known node, grouped by node
-   and sorted by name. Pods evicted or moved earlier in the session (for
-   example by consolidation) are no longer `Running` and drop out. The job's
-   own attempts never evict its own pods and discard their statements, so the
+   still `Running` with a deferred upsize, on a known node, sorted by name.
+   Pods evicted or moved earlier in the session (for example by
+   consolidation) are no longer `Running` and drop out. The job's own
+   attempts never evict its own pods and discard their statements, so the
    scanned pods stay current while the job's attempts run.
 
 Then, one deferred pod at a time:

@@ -8,7 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 )
@@ -40,12 +42,13 @@ func TestOrderedVictimsQueueOnNodeKeepsPreemptRules(t *testing.T) {
 	require.True(t, queue.IsEmpty(), "equal priority job is not a victim")
 }
 
-func TestIsEligibleForDeferredResizeUsesNonPreemptibleQuota(t *testing.T) {
+func TestSolveDeferredResizeChecksNonPreemptibleQuotaForTheResizingTask(t *testing.T) {
 	ssn, preemptor, _, _ := newPreemptVictimQueueTestSession()
-	tasks := []*pod_info.PodInfo{}
-	for _, task := range preemptor.GetAllPodsMap() {
-		tasks = append(tasks, task)
+	var task *pod_info.PodInfo
+	for _, task = range preemptor.GetAllPodsMap() {
+		break
 	}
+	node := &node_info.NodeInfo{Name: "node-0"}
 
 	var gotTasks []*pod_info.PodInfo
 	overQuota := true
@@ -54,8 +57,13 @@ func TestIsEligibleForDeferredResizeUsesNonPreemptibleQuota(t *testing.T) {
 		return &api.SchedulableResult{IsSchedulable: !overQuota}
 	})
 
-	require.False(t, isEligibleForDeferredResize(ssn)(preemptor, tasks))
-	require.Equal(t, tasks, gotTasks)
+	stmt, result := solveDeferredResize(ssn, nil)(preemptor, node, task)
+	require.Nil(t, stmt)
+	require.Nil(t, result, "the solver must not run over quota")
+	require.Equal(t, []*pod_info.PodInfo{task}, gotTasks)
+
 	overQuota = false
-	require.True(t, isEligibleForDeferredResize(ssn)(preemptor, tasks))
+	stmt, result = solveDeferredResize(ssn, nil)(preemptor, node, task)
+	require.Nil(t, stmt)
+	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason(), "the solver ran")
 }
