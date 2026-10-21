@@ -9,6 +9,7 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -245,5 +246,53 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			Mocks:                    mocks(0),
 			DeferredResizePreemption: true,
 		},
+	}
+}
+
+// The victim filter must see the resize demand only. A GPU-requesting pending sibling would make the
+// victim's queue, over quota but within fair share, look unreclaimable when the sibling sorts first.
+func TestReclaimForDeferredResizeIgnoresPendingDemandInVictimFilter(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+
+	resizing := &tasks_fake.TestTaskBasic{
+		State:        pod_status.Running,
+		NodeName:     "node0",
+		ResizeStatus: &tasks_fake.TestResizeStatus{ActualCPUs: 1, Deferred: true},
+	}
+	gpuSibling := &tasks_fake.TestTaskBasic{State: pod_status.Pending, RequiredGPUs: ptr.To(int64(1))}
+
+	for name, tasks := range map[string][]*tasks_fake.TestTaskBasic{
+		"resizing pod first": {resizing, gpuSibling},
+		"gpu sibling first":  {gpuSibling, resizing},
+	} {
+		t.Run(name, func(t *testing.T) {
+			resizer := reclaimResizeJob(constants.PriorityTrainNumber, 3, 1)
+			resizer.RootSubGroupSet = jobs_fake.DefaultSubGroup(1)
+			resizer.Tasks = tasks
+			resizingName := "resizer-0"
+			if tasks[0] == gpuSibling {
+				resizingName = "resizer-1"
+			}
+			topology := test_utils.TestTopologyBasic{
+				Name: name,
+				Jobs: []*jobs_fake.TestJobBasic{resizer, reclaimVictimJob(2)},
+				// node1 raises queue1's fair share to its full request, so only its deserved quota is exceeded.
+				Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}, "node1": {CPUMillis: 4}},
+				Queues: []test_utils.TestQueueBasic{cpuQueue("queue0", 3000), cpuQueue("queue1", 1000)},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"victim": {NodeName: "node0", Status: pod_status.Releasing},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					resizingName: {NodeName: "node0", Status: pod_status.Running},
+				},
+				Mocks:                    &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfCacheEvictions: 1}},
+				DeferredResizePreemption: true,
+			}
+			ssn := test_utils.BuildSession(topology, controller)
+			reclaim.New().Execute(ssn)
+			test_utils.MatchExpectedAndRealTasks(t, 0, topology, ssn)
+		})
 	}
 }

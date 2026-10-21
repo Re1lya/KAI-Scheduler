@@ -137,20 +137,21 @@ func (ra *reclaimAction) reclaimForPendingTasks(
 }
 
 // solveDeferredResize counts only the job's allocated pods and the resizing pod toward the reclaim
-// check, not the demand of its pending pods.
+// check and the victim filter, not the demand of its pending pods.
 func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) deferredresize.Solve {
 	return func(
 		job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
 	) (*framework.Statement, *solvers.SearchResult) {
 		tasks := []*pod_info.PodInfo{task}
-		if !ssn.CanReclaimResources(deferredresize.ResizeRepresentative(job, tasks)) {
+		representative := deferredresize.ResizeRepresentative(job, tasks)
+		if !ssn.CanReclaimResources(representative) {
 			return nil, nil
 		}
 		ssn.OnJobSolutionStart()
 		_, statement, _, result := solvers.NewJobsSolver(
 			[]*node_info.NodeInfo{node},
 			ssn.ReclaimScenarioValidatorFn,
-			getOrderedVictimsQueueOnNode(ssn, job, node.Name),
+			getOrderedVictimsQueueOnNode(ssn, representative, node.Name),
 			framework.Reclaim,
 			actionBudget,
 		).PinFeasibleNodes().SolveTasksWithResult(ssn, job, tasks)

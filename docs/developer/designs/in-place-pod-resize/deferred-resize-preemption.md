@@ -61,7 +61,8 @@ Then, one deferred pod at a time:
    victim-invariant pre-predicates, plus `IsNonPreemptibleJobOverQueueQuota`
    for the resizing pod (preempt) or `CanReclaimResources` on a copy of the
    job holding only its allocated pods and the resizing pod (reclaim), so the
-   demand of its pending pods is not counted.
+   demand of its pending pods is not counted. Reclaim's victim filter gets
+   the same copy, since it judges candidate queues by the reclaimer's demand.
 4. **Run the action's `JobSolver`** for exactly that pod
    (`SolveTasksWithResult`). It is pinned to the pod's node
    (`PinFeasibleNodes`) and uses victims from that node only. The pod fits
