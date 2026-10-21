@@ -8,8 +8,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -66,4 +68,15 @@ func TestSolveDeferredResizeChecksNonPreemptibleQuotaForTheResizingTask(t *testi
 	stmt, result = solveDeferredResize(ssn, nil)(preemptor, node, task)
 	require.Nil(t, stmt)
 	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason(), "the solver ran")
+}
+
+// A job queued only for a deferred resize must not reach the pending path, where it would be
+// recorded as a failed job with no demand and make every later job in its queue look harder.
+func TestPreemptForPendingTasksSkipsJobWithoutPendingTasks(t *testing.T) {
+	ssn, _, running, _ := newPreemptVictimQueueTestSession()
+	require.Zero(t, running.GetNumPendingTasks())
+
+	smallestFailedJobsByQueue := map[common_info.QueueID]*common.MinimalJobRepresentatives{}
+	require.False(t, preemptForPendingTasks(ssn, running, nil, smallestFailedJobsByQueue))
+	require.Empty(t, smallestFailedJobsByQueue)
 }

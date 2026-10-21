@@ -73,10 +73,8 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
 
-		if job.GetNumPendingTasks() > 0 {
-			if shouldStop := ra.reclaimForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
-				return
-			}
+		if shouldStop := ra.reclaimForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
+			return
 		}
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
@@ -91,6 +89,9 @@ func (ra *reclaimAction) reclaimForPendingTasks(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 	smallestFailedJobsByQueue map[common_info.QueueID]*common.MinimalJobRepresentatives,
 ) (shouldStop bool) {
+	if job.GetNumPendingTasks() == 0 {
+		return false
+	}
 	if !ssn.CanReclaimResources(job) {
 		return false
 	}

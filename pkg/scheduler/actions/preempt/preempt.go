@@ -73,10 +73,8 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
 
-		if job.GetNumPendingTasks() > 0 {
-			if shouldStop := preemptForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
-				return
-			}
+		if shouldStop := preemptForPendingTasks(ssn, job, actionBudget, smallestFailedJobsByQueue); shouldStop {
+			return
 		}
 
 		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
@@ -91,6 +89,9 @@ func preemptForPendingTasks(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 	smallestFailedJobsByQueue map[common_info.QueueID]*common.MinimalJobRepresentatives,
 ) (shouldStop bool) {
+	if job.GetNumPendingTasks() == 0 {
+		return false
+	}
 	smallestFailedJobs, found := smallestFailedJobsByQueue[job.Queue]
 	if !found {
 		smallestFailedJobsByQueue[job.Queue] = common.NewMinimalJobRepresentatives()

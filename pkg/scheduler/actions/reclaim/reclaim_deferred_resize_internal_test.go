@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -70,4 +71,21 @@ func TestSolveDeferredResizeChecksCanReclaimResourcesWithoutPendingPods(t *testi
 	require.Nil(t, stmt)
 	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason(), "the solver ran")
 	require.Equal(t, 1, solutionStarts)
+}
+
+// A job queued only for a deferred resize must not reach the pending path, where it would be
+// recorded as a failed job with no demand and make every later job in its queue look harder.
+func TestReclaimForPendingTasksSkipsJobWithoutPendingTasks(t *testing.T) {
+	ssn, _, running, _ := newVictimQueueTestSession()
+	require.Zero(t, running.GetNumPendingTasks())
+	reclaimChecks := 0
+	ssn.AddCanReclaimResourcesFn(func(*podgroup_info.PodGroupInfo) bool {
+		reclaimChecks++
+		return true
+	})
+
+	smallestFailedJobsByQueue := map[common_info.QueueID]*common.MinimalJobRepresentatives{}
+	require.False(t, New().reclaimForPendingTasks(ssn, running, nil, smallestFailedJobsByQueue))
+	require.Empty(t, smallestFailedJobsByQueue)
+	require.Zero(t, reclaimChecks)
 }
