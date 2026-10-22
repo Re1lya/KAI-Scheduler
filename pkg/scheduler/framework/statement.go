@@ -541,6 +541,13 @@ func (s *Statement) Unevict(taskToUnevict *pod_info.PodInfo) error {
 	return s.undoEarliestValidOperation(taskToUnevict, evict)
 }
 
+func (s *Statement) Unpipeline(taskToUnpipeline *pod_info.PodInfo) error {
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Unpipelining task: %v", taskToUnpipeline.Name)
+	})
+	return s.undoEarliestValidOperation(taskToUnpipeline, pipeline)
+}
+
 func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID) error {
 	for _, op := range s.operations {
 		currentTaskInOperations := op.TaskInfo()

@@ -4,6 +4,7 @@
 package preempt_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,10 +15,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
@@ -906,4 +909,68 @@ func TestPreemptForDeferredResize_ExhaustedBudgetStopsSafely(t *testing.T) {
 	assert.Equal(t, pod_status.Running, ssn.ClusterInfo.PodGroupInfos["victim"].GetAllPodsMap()["victim-0"].Status)
 	assert.Equal(t, pod_status.Running, ssn.ClusterInfo.PodGroupInfos["resizer"].GetAllPodsMap()["resizer-0"].Status)
 	assert.Equal(t, before, ssn.ClusterInfo.Nodes["node0"].IdleVector)
+}
+
+func elasticJob(name string, priority int32, minAvailable int32, nodeNames ...string) *jobs_fake.TestJobBasic {
+	job := &jobs_fake.TestJobBasic{
+		Name: name, QueueName: "queue0", Priority: priority, RequiredCPUsPerTask: 1,
+		RootSubGroupSet: jobs_fake.DefaultSubGroup(minAvailable),
+	}
+	for _, nodeName := range nodeNames {
+		job.Tasks = append(job.Tasks, &tasks_fake.TestTaskBasic{State: pod_status.Running, NodeName: nodeName})
+	}
+	return job
+}
+
+func runDeferredResizePreempt(t *testing.T, jobs []*jobs_fake.TestJobBasic, nodeNames ...string) *framework.Session {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	topology := test_utils.TestTopologyBasic{
+		Name:   t.Name(),
+		Jobs:   append([]*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1)}, jobs...),
+		Nodes:  cpuNodes(nodeNames...),
+		Queues: []test_utils.TestQueueBasic{{Name: "queue0"}},
+		Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+			NumberOfCacheEvictions: 10, NumberOfPipelineActions: 10,
+		}},
+		DeferredResizePreemption: true,
+	}
+	ssn := test_utils.BuildSession(topology, controller)
+	preempt.New().Execute(ssn)
+	return ssn
+}
+
+func requireResizeMadeRoom(t *testing.T, ssn *framework.Session) {
+	resizer := ssn.ClusterInfo.PodGroupInfos["resizer"].GetAllPodsMap()["resizer-0"]
+	require.Equal(t, pod_status.Running, resizer.Status)
+	require.Equal(t, "node0", resizer.NodeName)
+	require.GreaterOrEqual(t, ssn.ClusterInfo.Nodes["node0"].NonAllocatedResource(v1.ResourceCPU), 0.0)
+}
+
+func activeTasks(ssn *framework.Session, jobName string) int {
+	count := 0
+	for _, task := range ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)].GetAllPodsMap() {
+		if task.Status == pod_status.Running || task.Status == pod_status.Pipelined {
+			count++
+		}
+	}
+	return count
+}
+
+// Evicting the elastic job alone is not enough, so "other" goes too, which leaves room for one
+// elastic pod. The solver keeps that pod running, possibly on another node, and so must the commit.
+func TestDeferredResizeCommitsVictimMoves(t *testing.T) {
+	for localIndex := 0; localIndex < 2; localIndex++ {
+		t.Run(fmt.Sprintf("local pod at index %d", localIndex), func(t *testing.T) {
+			nodeNames := []string{"node1", "node1"}
+			nodeNames[localIndex] = "node0"
+			elastic := elasticJob("elastic", constants.PriorityTrainNumber, 1, nodeNames...)
+			other := runningCPUJob("other", "queue0", "node0", constants.PriorityTrainNumber+1, 2)
+
+			ssn := runDeferredResizePreempt(t, []*jobs_fake.TestJobBasic{elastic, other}, "node0", "node1")
+
+			requireResizeMadeRoom(t, ssn)
+			assert.GreaterOrEqual(t, activeTasks(ssn, "elastic"), 1)
+		})
+	}
 }

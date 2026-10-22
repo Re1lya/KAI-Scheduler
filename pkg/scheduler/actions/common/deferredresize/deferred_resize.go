@@ -14,7 +14,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -127,23 +126,19 @@ func attempt(
 	if stmt == nil {
 		return false, result
 	}
+	defer stmt.Discard()
 	// JobSolver reports unsolved here since a Releasing task already counts as active.
-	solved := result.Reason() == solvers.SearchResultSolved
 	victims := stmt.EvictedTasks()
-	stmt.Discard()
-	self.Discard()
-	if !solved || len(victims) == 0 {
+	if result.Reason() != solvers.SearchResultSolved || len(victims) == 0 {
 		return false, result
 	}
-
-	final := ssn.Statement()
-	if err := common.EvictAllPreemptees(ssn, victims, job, final, actionType); err != nil {
-		log.InfraLogger.Errorf("Failed to evict victims for deferred resize of <%s/%s>: %v",
+	// Commit the victims' evictions and moves as solved, without the resizing pod's placement.
+	if err := stmt.Unpipeline(task); err != nil {
+		log.InfraLogger.Errorf("Failed to undo the placement of deferred resize task <%s/%s>: %v",
 			task.Namespace, task.Name, err)
-		final.Discard()
 		return false, result
 	}
-	if err := final.Commit(); err != nil {
+	if err := stmt.Commit(); err != nil {
 		log.InfraLogger.Errorf("Failed to commit %s statement for deferred resize: %v", actionType, err)
 	}
 	metrics.IncPodgroupScheduledByAction()
