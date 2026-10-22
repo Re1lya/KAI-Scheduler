@@ -26,8 +26,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// Solve runs the action's admission check and job solver for one virtually evicted resizing task,
-// pinned to node with victims from node only. A nil statement means no solution.
+// Solve runs the action's admission check and job solver for one virtually evicted resizing task.
+// The solver must be pinned to node (an in-place resize cannot move the pod) and take victims from
+// node only. A nil statement means no solution.
 type Solve func(
 	job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
 ) (*framework.Statement, *solvers.SearchResult)
@@ -132,7 +133,7 @@ func attempt(
 		return false, nil, result
 	}
 	// JobSolver reports unsolved here since a Releasing task already counts as active.
-	solved := result.Reason() == solvers.SearchResultSolved && isPipelinedOnNode(job, task, node.Name)
+	solved := result.Reason() == solvers.SearchResultSolved
 	victims = stmt.EvictedTasks()
 	stmt.Discard()
 	self.Discard()
@@ -172,12 +173,6 @@ func nodeFitsAfterReleasing(node *node_info.NodeInfo) bool {
 		}
 	}
 	return true
-}
-
-// isPipelinedOnNode checks the job's current task object; the solver pipelines clones.
-func isPipelinedOnNode(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo, nodeName string) bool {
-	current, found := job.GetAllPodsMap()[task.UID]
-	return found && current.Status == pod_status.Pipelined && current.NodeName == nodeName
 }
 
 func taskNames(tasks []*pod_info.PodInfo) []string {

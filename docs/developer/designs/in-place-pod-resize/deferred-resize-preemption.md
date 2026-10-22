@@ -86,8 +86,6 @@ Framework changes that support this:
   statement, because the solver opens and discards its own statements per
   scenario and would otherwise undo it. So the solver's statement pipelines it
   on its node normally; this case previously always failed.
-- The solver pipelines clones of the job's tasks, so success is checked on the
-  job's current task objects.
 
 ## Ordering
 

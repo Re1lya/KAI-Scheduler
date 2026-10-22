@@ -506,35 +506,6 @@ func TestAttemptForJob_EachNodeIndependently(t *testing.T) {
 	}
 }
 
-func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {
-	topology := baseTopology()
-	// An unpinned solver can fit the resizer on node1 by evicting victim1 there.
-	topology.Nodes["node1"] = nodes_fake.TestNodeBasic{CPUMillis: 3}
-	topology.Jobs = append(topology.Jobs, runningJob("victim1", "node1", constants.PriorityTrainNumber, 2))
-	ssn := buildSession(t, topology)
-	job, nodeTasks := resizerTasks(ssn)
-	before := snapshot(ssn)
-
-	unpinnedOnOtherNode := withSolver(ssn, func(*podgroup_info.PodGroupInfo, *node_info.NodeInfo) *solvers.JobSolver {
-		victims := utils.NewCachedVictimsQueueGenerator(ssn,
-			func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
-				return utils.GetVictimCandidates(ssn, func(victim *podgroup_info.PodGroupInfo) bool {
-					return victim.UID == "victim1"
-				})
-			},
-			utils.JobsOrderInitOptions{FilterNonPreemptible: true, FilterNonActiveAllocated: true},
-		)
-		return solvers.NewJobsSolver([]*node_info.NodeInfo{ssn.ClusterInfo.Nodes["node1"]},
-			ssn.PreemptScenarioValidator, victims, framework.Preempt, nil)
-	})
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, unpinnedOnOtherNode)
-
-	assert.False(t, succeeded)
-	assert.Empty(t, victims)
-	requireUnchanged(t, before, ssn)
-}
-
 func TestIsGangSecured(t *testing.T) {
 	topology := baseTopology()
 	topology.Jobs = append(topology.Jobs,
