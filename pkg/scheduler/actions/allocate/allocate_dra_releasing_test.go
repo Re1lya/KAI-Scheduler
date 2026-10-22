@@ -155,6 +155,51 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 	}
 }
 
+// A device reachable from every node is freed for all of them when a pod terminating on one node exits.
+func TestAllocateDRAWithSharedDeviceOfReleasingPodOnAnotherNode(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() {
+		featuregates.SetDynamicResourcesEnabledForTest(false)
+	})
+
+	pendingJob := draJob("pending_job0", pod_status.Pending, "", "pending-claim")
+	pendingJob.Tasks[0].NodeAffinityNames = []string{"node1"}
+	testMetadata := test_utils.TestTopologyBasic{
+		Name: "Shared device held by a pod releasing on another node: pipeline onto it",
+		Jobs: []*jobs_fake.TestJobBasic{
+			draJob("holder_job0", pod_status.Releasing, "node0", "holder-claim"),
+			pendingJob,
+		},
+		TestDRAObjects: dra_fake.TestDRAObjects{
+			DeviceClasses: []string{"nvidia.com/gpu"},
+			ResourceSlices: []*dra_fake.TestResourceSlice{
+				{Name: "shared-gpu", DeviceClassName: "nvidia.com/gpu", AllNodes: true, Count: 1},
+			},
+			ResourceClaims: []*dra_fake.TestResourceClaim{
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").
+					WithAllocation("shared-gpu", "0", "holder_job0-0").GeneratedFor("holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
+			},
+		},
+		Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {GPUs: 2}, "node1": {GPUs: 2}},
+		Queues: draQueues(),
+		Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
+		JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+			"holder_job0":  {Status: pod_status.Releasing, NodeName: "node0"},
+			"pending_job0": {Status: pod_status.Pipelined, NodeName: "node1"},
+		},
+	}
+
+	ssn := test_utils.BuildSession(testMetadata, controller)
+	// The DRA manager cache is populated asynchronously.
+	time.Sleep(time.Millisecond)
+	allocate.New().Execute(ssn)
+	test_utils.MatchExpectedAndRealTasks(t, 0, testMetadata, ssn)
+}
+
 func draJob(name string, state pod_status.PodStatus, nodeName string, claims ...string) *jobs_fake.TestJobBasic {
 	job := &jobs_fake.TestJobBasic{
 		Name:      name,

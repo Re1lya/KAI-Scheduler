@@ -92,7 +92,11 @@ func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
 		)
 		k8sPlugins.SessionDRAManager = drap.manager
 	}
-	drap.releasingDevices = newReleasingDevices(ssn.ClusterInfo.ResourceClaims, ssn.ReleasingPods())
+	drap.releasingDevices = newReleasingDevices(
+		ssn.ClusterInfo.ResourceClaims, ssn.ClusterInfo.ResourceSlices, ssn.ReleasingPods())
+	if drap.releasingDevices.shared {
+		ssn.ReleasingPods().SetSharedDevices()
+	}
 
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   drap.allocateHandlerFn(ssn),

@@ -22,10 +22,17 @@ import (
 type releasingDevices struct {
 	devices sets.Set[structured.DeviceID]
 	holders map[structured.DeviceID]int
+	// shared is set when a releasing device is in a pool reachable from more than one node.
+	shared bool
+}
+
+type devicePool struct {
+	driver string
+	name   string
 }
 
 func newReleasingDevices(
-	claims []*resourceapi.ResourceClaim, releasingPods *framework.ReleasingPods,
+	claims []*resourceapi.ResourceClaim, slices []*resourceapi.ResourceSlice, releasingPods *framework.ReleasingPods,
 ) *releasingDevices {
 	r := &releasingDevices{
 		devices: sets.New[structured.DeviceID](),
@@ -33,6 +40,12 @@ func newReleasingDevices(
 	}
 	if releasingPods.IsEmpty() {
 		return r
+	}
+	sharedPools := sets.New[devicePool]()
+	for _, slice := range slices {
+		if ptr.Deref(slice.Spec.NodeName, "") == "" {
+			sharedPools.Insert(devicePool{driver: slice.Spec.Driver, name: slice.Spec.Pool.Name})
+		}
 	}
 	for _, claim := range claims {
 		if claim.Status.Allocation == nil || !isReservedOnlyFor(claim, releasingPods) ||
@@ -45,6 +58,9 @@ func newReleasingDevices(
 				continue
 			}
 			r.devices.Insert(structured.MakeDeviceID(result.Driver, result.Pool, result.Device))
+			if sharedPools.Has(devicePool{driver: result.Driver, name: result.Pool}) {
+				r.shared = true
+			}
 		}
 	}
 	return r

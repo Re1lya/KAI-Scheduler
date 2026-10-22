@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
 
@@ -17,6 +18,8 @@ import (
 type ReleasingPods struct {
 	nodes sets.Set[string]
 	uids  sets.Set[types.UID]
+	// sharedDevices is set when a releasing pod holds a DRA device reachable from other nodes.
+	sharedDevices bool
 }
 
 // ReleasingPods returns the terminating pods of the session, computed once on first use.
@@ -55,7 +58,19 @@ func (r *ReleasingPods) Has(uid types.UID) bool {
 	return r != nil && r.uids.Has(uid)
 }
 
-// MayChangeFit reports whether removing the releasing pods can change a predicate result on the node.
-func (r *ReleasingPods) MayChangeFit(nodeName string) bool {
-	return r != nil && r.nodes.Has(nodeName)
+// SetSharedDevices records that a releasing pod holds a DRA device reachable from other nodes.
+func (r *ReleasingPods) SetSharedDevices() {
+	r.sharedDevices = true
+}
+
+// MayChangeFit reports whether removing the releasing pods can change a predicate result for the
+// task on the node.
+func (r *ReleasingPods) MayChangeFit(task *pod_info.PodInfo, nodeName string) bool {
+	if r == nil {
+		return false
+	}
+	if r.nodes.Has(nodeName) {
+		return true
+	}
+	return r.sharedDevices && (len(task.Pod.Spec.ResourceClaims) > 0 || task.ExtendedResourceClaim != nil)
 }

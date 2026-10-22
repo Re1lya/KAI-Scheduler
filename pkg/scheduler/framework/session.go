@@ -280,7 +280,7 @@ func (ssn *Session) FittingNode(
 		return true, false
 	}
 	logPredicateFailure(task, node, err)
-	if ssn.ReleasingPods().MayChangeFit(node.Name) &&
+	if ssn.ReleasingPods().MayChangeFit(task, node.Name) &&
 		ssn.PredicateFn(task, job, node, api.PipelinePredicate) == nil {
 		log.InfraLogger.V(6).Do(func() {
 			log.InfraLogger.Infof("Task <%s/%s> fits node <%s> once its releasing pods are gone",
