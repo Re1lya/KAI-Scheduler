@@ -1481,7 +1481,6 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				tt.args.isNonPreemptableTaskOnNodeOverCapacityFn,
 				tt.clusterData.isRestrictNodeSchedulingEnabled,
 				skipPredicates,
-				api.StrictPredicate,
 			); !reflect.DeepEqual(err, tt.err) {
 				t.Errorf("evaluateTaskOnPredicates() error:\n%v\nExpected: %v", err, tt.err)
 			}

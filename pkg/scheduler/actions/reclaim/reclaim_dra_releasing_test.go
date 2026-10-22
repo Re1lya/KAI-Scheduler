@@ -8,8 +8,6 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
-	resourceapi "k8s.io/api/resource/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
@@ -20,7 +18,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
-	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 // A device of an earlier victim that is still terminating is freed without another eviction.
@@ -35,31 +32,6 @@ func TestReclaimDRAWithDevicesOfReleasingVictims(t *testing.T) {
 		featuregates.SetDynamicResourcesEnabledForTest(false)
 	})
 
-	claim := func(name, queue string) *dra_fake.TestResourceClaim {
-		return &dra_fake.TestResourceClaim{
-			Name:            name,
-			Namespace:       "test",
-			DeviceClassName: "nvidia.com/gpu",
-			Count:           1,
-			Labels:          map[string]string{commonconstants.DefaultQueueLabel: queue},
-		}
-	}
-	allocated := func(name, queue, podName, device string) *dra_fake.TestResourceClaim {
-		c := claim(name, queue)
-		c.ClaimStatus = &resourceapi.ResourceClaimStatus{
-			Allocation: &resourceapi.AllocationResult{
-				Devices: resourceapi.DeviceAllocationResult{
-					Results: []resourceapi.DeviceRequestAllocationResult{
-						{Request: name, Driver: "nvidia.com/gpu", Pool: "node0", Device: device},
-					},
-				},
-			},
-			ReservedFor: []resourceapi.ResourceClaimConsumerReference{
-				{Resource: "pods", Name: podName, UID: types.UID(podName)},
-			},
-		}
-		return c
-	}
 	task := func(state pod_status.PodStatus, nodeName, claimName string) *tasks_fake.TestTaskBasic {
 		return &tasks_fake.TestTaskBasic{State: state, NodeName: nodeName, ResourceClaimNames: []string{claimName}}
 	}
@@ -89,10 +61,10 @@ func TestReclaimDRAWithDevicesOfReleasingVictims(t *testing.T) {
 				{Name: "node0-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node0", Count: 2},
 			},
 			ResourceClaims: []*dra_fake.TestResourceClaim{
-				allocated("releasing-claim", "queue0", "releasing_job0-0", "0"),
-				allocated("running-claim", "queue0", "running_job0-0", "1"),
-				claim("pending-claim-0", "queue1"),
-				claim("pending-claim-1", "queue1"),
+				dra_fake.NewTestResourceClaim("releasing-claim", "test", "queue0").WithAllocation("node0", "0", "releasing_job0-0"),
+				dra_fake.NewTestResourceClaim("running-claim", "test", "queue0").WithAllocation("node0", "1", "running_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue1"),
+				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue1"),
 			},
 		},
 		Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {GPUs: 2}},

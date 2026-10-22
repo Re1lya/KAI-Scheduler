@@ -137,10 +137,10 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	})
 
 	ssn.AddPredicateFn(func(
-		task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, mode api.PredicateMode,
+		task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, _ api.PredicateMode,
 	) error {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
-			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates, mode)
+			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
 	})
 }
 
@@ -306,7 +306,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	isTaskAllocationOnNodeOverCapacityFn api.IsTaskAllocationOverCapacityFn,
 	isRestrictNodeSchedulingEnabled func() bool,
 	skipPredicates SkipPredicates,
-	mode api.PredicateMode,
 ) error {
 	originalPodInfoNodeName := task.NodeName
 	originalPodNodeName := task.Pod.Spec.NodeName
@@ -366,11 +365,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 			continue
 		}
 
-		filter := predicate.Filter
-		if mode == api.PipelinePredicate && predicate.PipelineFilter != nil {
-			filter = predicate.PipelineFilter
-		}
-		fit, reasons, err := filter(task.Pod, k8sNodeInfo)
+		fit, reasons, err := predicate.Filter(task.Pod, k8sNodeInfo)
 		if err != nil {
 			return err
 		}

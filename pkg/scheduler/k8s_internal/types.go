@@ -42,9 +42,6 @@ type SessionPredicate struct {
 	PreFilter           FitPredicatePreFilter
 	IsFilterRequired    FitPredicateRequired
 	Filter              FitPredicateFilter
-	// PipelineFilter evaluates the node as it will be once its releasing pods are gone.
-	// When nil, releasing pods do not affect the predicate and Filter is used.
-	PipelineFilter FitPredicateFilter
 }
 
 type PreScoreFn func(pod *v1.Pod, fittingNodes []ksf.NodeInfo) *ksf.Status

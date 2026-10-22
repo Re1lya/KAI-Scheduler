@@ -8,8 +8,6 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
-	resourceapi "k8s.io/api/resource/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
@@ -20,7 +18,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
-	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 // A device held only by a terminating pod's claim is freed once the pod exits, like the pod's
@@ -42,8 +39,8 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
 			},
 			TestDRAObjects: draObjects(1,
-				allocatedClaim("holder-claim", "holder_job0-0", "0"),
-				pendingClaim("pending-claim"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
 			Queues: draQueues(),
@@ -60,9 +57,9 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim-0", "pending-claim-1"),
 			},
 			TestDRAObjects: draObjects(2,
-				allocatedClaim("holder-claim", "holder_job0-0", "0"),
-				pendingClaim("pending-claim-0"),
-				pendingClaim("pending-claim-1"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue0"),
+				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
 			Queues: draQueues(),
@@ -79,9 +76,9 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim-0", "pending-claim-1"),
 			},
 			TestDRAObjects: draObjects(1,
-				allocatedClaim("holder-claim", "holder_job0-0", "0"),
-				pendingClaim("pending-claim-0"),
-				pendingClaim("pending-claim-1"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue0"),
+				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
 			Queues: draQueues(),
@@ -99,8 +96,8 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
 			},
 			TestDRAObjects: draObjects(1,
-				allocatedClaim("holder-claim", "holder_job0-0", "0"),
-				pendingClaim("pending-claim"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
 			Queues: draQueues(),
@@ -145,33 +142,6 @@ func draObjects(devices int, claims ...*dra_fake.TestResourceClaim) dra_fake.Tes
 		},
 		ResourceClaims: claims,
 	}
-}
-
-func pendingClaim(name string) *dra_fake.TestResourceClaim {
-	return &dra_fake.TestResourceClaim{
-		Name:            name,
-		Namespace:       "test",
-		DeviceClassName: "nvidia.com/gpu",
-		Count:           1,
-		Labels:          map[string]string{commonconstants.DefaultQueueLabel: "queue0"},
-	}
-}
-
-func allocatedClaim(name, podName, device string) *dra_fake.TestResourceClaim {
-	claim := pendingClaim(name)
-	claim.ClaimStatus = &resourceapi.ResourceClaimStatus{
-		Allocation: &resourceapi.AllocationResult{
-			Devices: resourceapi.DeviceAllocationResult{
-				Results: []resourceapi.DeviceRequestAllocationResult{
-					{Request: name, Driver: "nvidia.com/gpu", Pool: "node0", Device: device},
-				},
-			},
-		},
-		ReservedFor: []resourceapi.ResourceClaimConsumerReference{
-			{Resource: "pods", Name: podName, UID: types.UID(podName)},
-		},
-	}
-	return claim
 }
 
 func draNodes() map[string]nodes_fake.TestNodeBasic {

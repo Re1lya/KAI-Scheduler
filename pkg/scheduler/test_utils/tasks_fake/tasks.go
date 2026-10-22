@@ -45,7 +45,6 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
-	HostPorts                  []int32
 }
 
 func BuildPod(
@@ -92,10 +91,6 @@ func BuildPod(
 			},
 			SchedulerName: "kai-scheduler",
 		},
-	}
-	for _, hostPort := range task.HostPorts {
-		pod.Spec.Containers[0].Ports = append(pod.Spec.Containers[0].Ports,
-			v1.ContainerPort{ContainerPort: hostPort, HostPort: hostPort, Protocol: v1.ProtocolTCP})
 	}
 	maps.Copy(pod.Annotations, task.Annotations)
 	if gpuMemoryMiB > 0 {

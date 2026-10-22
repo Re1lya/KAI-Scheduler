@@ -10,6 +10,8 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+
+	"github.com/kai-scheduler/api/constants"
 )
 
 type TestDRAObjects struct {
@@ -113,4 +115,33 @@ func RandomReservedForReferences(numReferences int) []resourceapi.ResourceClaimC
 			})
 	}
 	return references
+}
+
+// NewTestResourceClaim returns a single-device claim of the nvidia.com/gpu class, labeled with its queue.
+func NewTestResourceClaim(name, namespace, queue string) *TestResourceClaim {
+	return &TestResourceClaim{
+		Name:            name,
+		Namespace:       namespace,
+		DeviceClassName: "nvidia.com/gpu",
+		Count:           1,
+		Labels:          map[string]string{constants.DefaultQueueLabel: queue},
+	}
+}
+
+// WithAllocation allocates the claim a device of the node's pool and reserves it for the pod,
+// whose fake UID is its name.
+func (c *TestResourceClaim) WithAllocation(nodeName, device, podName string) *TestResourceClaim {
+	c.ClaimStatus = &resourceapi.ResourceClaimStatus{
+		Allocation: &resourceapi.AllocationResult{
+			Devices: resourceapi.DeviceAllocationResult{
+				Results: []resourceapi.DeviceRequestAllocationResult{
+					{Request: c.Name, Driver: "nvidia.com/gpu", Pool: nodeName, Device: device},
+				},
+			},
+		},
+		ReservedFor: []resourceapi.ResourceClaimConsumerReference{
+			{Resource: "pods", Name: podName, UID: types.UID(podName)},
+		},
+	}
+	return c
 }

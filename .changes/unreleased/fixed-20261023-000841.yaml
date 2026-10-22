@@ -1,6 +1,0 @@
-kind: Fixed
-body: |-
-  Pipeline onto nodes whose terminating pods hold DRA devices, host ports or affinity instead of evicting more pods
-custom:
-  Author: "gshaibi"
-  Issue: "2412"
