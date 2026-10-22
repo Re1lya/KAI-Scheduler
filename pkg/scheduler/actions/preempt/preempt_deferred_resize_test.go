@@ -102,8 +102,6 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 	queues := []test_utils.TestQueueBasic{{Name: "queue0"}}
 	nonPreemptibleVictim := runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2)
 	nonPreemptibleVictim.Preemptibility = enginev2alpha2.NonPreemptible
-	preemptionDisabled := deferredResizeJob("resizer", "node0", 3, 1)
-	preemptionDisabled.Tasks[0].ResizeStatus.PreemptionDisabled = true
 
 	return []test_utils.TestTopologyBasic{
 		{
@@ -160,21 +158,6 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 			Jobs: []*jobs_fake.TestJobBasic{
 				deferredResizeJob("resizer", "node0", 3, 1),
 				runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 1),
-			},
-			Nodes:  cpuNodes("node0"),
-			Queues: queues,
-			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
-				"resizer": pod_status.Running,
-				"victim":  pod_status.Running,
-			}),
-			Mocks:                    noEvictionMocks(),
-			DeferredResizePreemption: true,
-		},
-		{
-			Name: "node disabled preemption for the resize",
-			Jobs: []*jobs_fake.TestJobBasic{
-				preemptionDisabled,
-				runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
 			},
 			Nodes:  cpuNodes("node0"),
 			Queues: queues,

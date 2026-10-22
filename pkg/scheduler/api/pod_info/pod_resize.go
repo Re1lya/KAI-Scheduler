@@ -10,10 +10,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
 
-// PodResizePreemptionDisabled is set by the kubelet (KEP-5836) when the node opts out of
-// preemption for deferred resizes. Not yet defined in k8s.io/api.
-const PodResizePreemptionDisabled v1.PodConditionType = "PodResizePreemptionDisabled"
-
 var resizableResources = []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory}
 
 // IsDeferredResizeTask reports whether a running task has a kubelet-Deferred in-place resize
@@ -24,19 +20,7 @@ func IsDeferredResizeTask(task *PodInfo) bool {
 		return false
 	}
 	pod := task.Pod
-	if !resourcehelpers.IsPodResizeDeferred(pod) || isResizePreemptionDisabled(pod) {
-		return false
-	}
-	return hasPendingUpsize(pod)
-}
-
-func isResizePreemptionDisabled(pod *v1.Pod) bool {
-	for _, c := range pod.Status.Conditions {
-		if c.Type == PodResizePreemptionDisabled {
-			return c.Status == v1.ConditionTrue
-		}
-	}
-	return false
+	return resourcehelpers.IsPodResizeDeferred(pod) && hasPendingUpsize(pod)
 }
 
 // hasPendingUpsize guards against a stale Deferred condition left after a later downsize.

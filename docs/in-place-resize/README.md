@@ -109,8 +109,6 @@ spec:
     deferred-resize-preemption: "true"
 ```
 
-A node can opt out of preemption for resizes ([KEP-5836](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/5836-scheduler-preemption-for-ippr)); the kubelet then sets the pod condition `PodResizePreemptionDisabled=True` and KAI skips that pod.
-
 Behavior to know:
 
 - Victims are only searched on the resizing pod's node, since an in-place resize cannot move the pod.

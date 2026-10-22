@@ -59,18 +59,6 @@ func TestIsDeferredResizeTask(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "preemption disabled by node",
-			task: resizeTask(pod_status.Running, "2", "1", "1", deferred,
-				v1.PodCondition{Type: PodResizePreemptionDisabled, Status: v1.ConditionTrue}),
-			want: false,
-		},
-		{
-			name: "preemption disabled condition false",
-			task: resizeTask(pod_status.Running, "2", "1", "1", deferred,
-				v1.PodCondition{Type: PodResizePreemptionDisabled, Status: v1.ConditionFalse}),
-			want: true,
-		},
-		{
 			name: "releasing task",
 			task: resizeTask(pod_status.Releasing, "2", "1", "1", deferred),
 			want: false,

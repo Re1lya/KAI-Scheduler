@@ -55,11 +55,10 @@ type TestTaskBasic struct {
 
 // TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
 type TestResizeStatus struct {
-	ActualCPUs         float64
-	ActualMemory       float64
-	Deferred           bool
-	Infeasible         bool
-	PreemptionDisabled bool
+	ActualCPUs   float64
+	ActualMemory float64
+	Deferred     bool
+	Infeasible   bool
 }
 
 func BuildPod(
@@ -205,12 +204,6 @@ func applyResizeStatus(pod *v1.Pod, resizeStatus *TestResizeStatus) {
 			Type:   v1.PodResizePending,
 			Status: v1.ConditionTrue,
 			Reason: reason,
-		})
-	}
-	if resizeStatus.PreemptionDisabled {
-		pod.Status.Conditions = append(pod.Status.Conditions, v1.PodCondition{
-			Type:   pod_info.PodResizePreemptionDisabled,
-			Status: v1.ConditionTrue,
 		})
 	}
 }

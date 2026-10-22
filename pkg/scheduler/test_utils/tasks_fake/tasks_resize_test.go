@@ -25,7 +25,7 @@ func buildResizePod(status *TestResizeStatus) *v1.Pod {
 }
 
 func TestBuildPodResizeStatus(t *testing.T) {
-	pod := buildResizePod(&TestResizeStatus{ActualCPUs: 1, Deferred: true, PreemptionDisabled: true})
+	pod := buildResizePod(&TestResizeStatus{ActualCPUs: 1, Deferred: true})
 
 	require.Len(t, pod.Status.ContainerStatuses, 1)
 	status := pod.Status.ContainerStatuses[0]
@@ -35,12 +35,10 @@ func TestBuildPodResizeStatus(t *testing.T) {
 	assert.True(t, status.AllocatedResources.Memory().Equal(resource.MustParse("2G")), "unset actual memory keeps spec")
 	assert.True(t, pod.Spec.Containers[0].Resources.Requests.Cpu().Equal(resource.MustParse("3")), "spec stays desired")
 
-	require.Len(t, pod.Status.Conditions, 2)
+	require.Len(t, pod.Status.Conditions, 1)
 	assert.Equal(t, v1.PodResizePending, pod.Status.Conditions[0].Type)
 	assert.Equal(t, v1.PodReasonDeferred, pod.Status.Conditions[0].Reason)
 	assert.Equal(t, v1.ConditionTrue, pod.Status.Conditions[0].Status)
-	assert.Equal(t, pod_info.PodResizePreemptionDisabled, pod.Status.Conditions[1].Type)
-	assert.Equal(t, v1.ConditionTrue, pod.Status.Conditions[1].Status)
 }
 
 func TestBuildPodResizeStatusVariants(t *testing.T) {
@@ -60,12 +58,6 @@ func TestBuildPodResizeStatusVariants(t *testing.T) {
 func TestBuildPodResizeStatusIsDetected(t *testing.T) {
 	deferred := &pod_info.PodInfo{Pod: buildResizePod(&TestResizeStatus{ActualCPUs: 1, Deferred: true}), Status: pod_status.Running}
 	assert.True(t, pod_info.IsDeferredResizeTask(deferred))
-
-	disabled := &pod_info.PodInfo{
-		Pod:    buildResizePod(&TestResizeStatus{ActualCPUs: 1, Deferred: true, PreemptionDisabled: true}),
-		Status: pod_status.Running,
-	}
-	assert.False(t, pod_info.IsDeferredResizeTask(disabled))
 }
 
 func TestBuildPodHostPorts(t *testing.T) {

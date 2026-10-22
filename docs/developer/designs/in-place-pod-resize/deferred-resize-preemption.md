@@ -30,7 +30,7 @@ so an important workload can stay at its old size forever.
 | Standard preemption picks victims | Standard preempt/reclaim victim selection, validators and budgets |
 | Reservation via `max(spec, allocated, actual)` | Same effective-request accounting (parent design) |
 | Kubelet retries once victims are gone | Same; KAI never touches the resizing pod |
-| Node opt-out: `PodResizePreemptionDisabled=True` | Pod with that condition is skipped |
+| Node opt-out: `spec.podPreemptionPolicy.disableResizePreemption` | Not supported yet |
 
 ## Mechanism: virtual self-eviction
 
@@ -109,8 +109,8 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   separate allocation mode in shared code. It also avoids pointless evictions:
   on a cordoned or not-ready node nothing is evicted. The cost is that a pod
   whose node changed under it (node affinity labels removed, a `NoSchedule`
-  taint added after it started) gets no evictions, where upstream would
-  preempt.
+  taint added after it started, a referenced ConfigMap deleted) gets no
+  evictions, where upstream would preempt.
 - A job whose gang is not secured gets no evictions for its resizes.
 
 ## Known limitations
