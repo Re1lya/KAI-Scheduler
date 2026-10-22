@@ -10,6 +10,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 )
@@ -50,6 +51,24 @@ func TestReleasingDevicesApply(t *testing.T) {
 		assert.Equal(t, sets.New(releasingDevice), stateOf(r, api.PipelinePredicate, releasingDevice))
 
 		r.release(allocation)
+		assert.Empty(t, stateOf(r, api.PipelinePredicate, releasingDevice))
+	})
+
+	t.Run("admin access allocations do not change holders", func(t *testing.T) {
+		adminAllocation := &resourceapi.AllocationResult{
+			Devices: resourceapi.DeviceAllocationResult{
+				Results: []resourceapi.DeviceRequestAllocationResult{
+					{Driver: "driver", Pool: "node0", Device: "0", AdminAccess: ptr.To(true)},
+				},
+			},
+		}
+		r := newReleasing()
+		r.hold(allocation)
+		r.release(adminAllocation)
+		assert.Equal(t, sets.New(releasingDevice), stateOf(r, api.PipelinePredicate, releasingDevice))
+
+		r.release(allocation)
+		r.hold(adminAllocation)
 		assert.Empty(t, stateOf(r, api.PipelinePredicate, releasingDevice))
 	})
 

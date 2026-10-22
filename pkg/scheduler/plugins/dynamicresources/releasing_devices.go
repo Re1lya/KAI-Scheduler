@@ -81,6 +81,10 @@ func (r *releasingDevices) forEachReleasingDevice(
 		return
 	}
 	for _, result := range allocation.Devices.Results {
+		// Admin access does not consume the device.
+		if ptr.Deref(result.AdminAccess, false) {
+			continue
+		}
 		device := structured.MakeDeviceID(result.Driver, result.Pool, result.Device)
 		if r.devices.Has(device) {
 			fn(device)
