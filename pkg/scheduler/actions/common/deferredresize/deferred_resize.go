@@ -32,8 +32,8 @@ type Solve func(
 	job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
 ) (*framework.Statement, *solvers.SearchResult)
 
-// HasDeferredResize reports whether any pod of the job has a deferred in-place upsize.
-func HasDeferredResize(job *podgroup_info.PodGroupInfo) bool {
+// hasDeferredResize reports whether any pod of the job has a deferred in-place upsize.
+func hasDeferredResize(job *podgroup_info.PodGroupInfo) bool {
 	for _, task := range job.GetAllPodsMap() {
 		if pod_info.IsDeferredResizeTask(task) {
 			return true
@@ -48,7 +48,7 @@ func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInf
 	if !ssn.DeferredResizePreemptionEnabled() {
 		return nil
 	}
-	return HasDeferredResize
+	return hasDeferredResize
 }
 
 // HasActiveAllocatedTaskOnNode reports whether a candidate victim job can free room on the node.
@@ -69,12 +69,12 @@ func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo,
 	actionType framework.ActionType, solve Solve, shouldStopForResult func(*solvers.SearchResult) bool,
 ) (shouldStop bool) {
-	if !ssn.DeferredResizePreemptionEnabled() || !IsGangSecured(job) {
+	if !ssn.DeferredResizePreemptionEnabled() || !isGangSecured(job) {
 		return false
 	}
 	for _, task := range deferredTasks(ssn, job) {
 		metrics.IncPodgroupsConsideredByAction()
-		succeeded, victims, result := Attempt(ssn, job, ssn.ClusterInfo.Nodes[task.NodeName], task, actionType, solve)
+		succeeded, victims, result := attempt(ssn, job, ssn.ClusterInfo.Nodes[task.NodeName], task, actionType, solve)
 		if succeeded {
 			if len(victims) > 0 {
 				metrics.IncPodgroupScheduledByAction()
@@ -104,14 +104,14 @@ func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*p
 	return tasks
 }
 
-// Attempt frees room on node for one deferred resize task, which must be current (as found by the
+// attempt frees room on node for one deferred resize task, which must be current (as found by the
 // scan in AttemptForJob). One task per attempt is enough: other deferred tasks on the node are
 // already charged at their desired size, so this task fits back only once the whole node
 // shortfall is covered. It also matters for correctness: with several tasks, the solver re-picks
 // them by the job's gang rule and may place only some, but one task is the only one it can pick.
 // The job's own attempts never evict its own pods and discard their statements, so the task stays
 // current across the job's attempts. succeeded is true with no victims when the node already has room.
-func Attempt(
+func attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, actionType framework.ActionType, solve Solve,
 ) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
@@ -158,9 +158,9 @@ func Attempt(
 	return true, victims, result
 }
 
-// IsGangSecured reports whether the job meets its gang minimum with allocated pods. A job that
+// isGangSecured reports whether the job meets its gang minimum with allocated pods. A job that
 // is not yet working must not evict others so that one of its pods can grow.
-func IsGangSecured(job *podgroup_info.PodGroupInfo) bool {
+func isGangSecured(job *podgroup_info.PodGroupInfo) bool {
 	return job.RootSubGroupSet != nil && job.RootSubGroupSet.IsMinRequirementSatisfied()
 }
 
