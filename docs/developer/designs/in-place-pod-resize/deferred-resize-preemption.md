@@ -30,7 +30,7 @@ so an important workload can stay at its old size forever.
 | Standard preemption picks victims | Standard preempt/reclaim victim selection, validators and budgets |
 | Reservation via `max(spec, allocated, actual)` | Same effective-request accounting (parent design) |
 | Kubelet retries once victims are gone | Same; KAI never touches the resizing pod |
-| Node opt-out: `spec.podPreemptionPolicy.disableResizePreemption` | Not supported yet |
+| Node opt-out: `spec.podPreemptionPolicy.disableResizePreemption` | Not supported yet (see [Future work](#future-work)) |
 
 ## Mechanism: virtual self-eviction
 
@@ -110,7 +110,7 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   on a cordoned or not-ready node nothing is evicted. The cost is that a pod
   whose node changed under it (node affinity labels removed, a `NoSchedule`
   taint added after it started, a referenced ConfigMap deleted) gets no
-  evictions, where upstream would preempt.
+  evictions, where upstream would preempt (see [Future work](#future-work)).
 - A job whose gang is not secured gets no evictions for its resizes.
 
 ## Known limitations
@@ -126,3 +126,13 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   kubelet retries; the shortfall then reappears and KAI evicts other KAI-
   scheduled pods for the same resize. KAI never evicts pods it does not
   schedule.
+
+## Future work
+
+- Resource fit only, as in KEP-5836: skip start-time checks (ConfigMap,
+  volumes, node affinity, taints) for the resizing pod on its own node, so a
+  pod whose node or references changed after it started can still get room.
+  Open question: whether a cordoned node should still block evictions (the
+  kubelet still resizes there).
+- Node opt-out: honor `spec.podPreemptionPolicy.disableResizePreemption` once
+  KAI's `k8s.io/api` includes it (alpha in Kubernetes 1.37).
