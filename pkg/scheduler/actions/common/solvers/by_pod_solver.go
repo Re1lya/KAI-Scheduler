@@ -4,6 +4,8 @@
 package solvers
 
 import (
+	"slices"
+
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
@@ -84,7 +86,8 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 	}
 	newFeasibleNodes := s.updateFeasibleNodes(session, allVictims)
 
-	result := s.runSimulation(session, scenario, statement, allVictims, maps.Values(s.feasibleNodes))
+	nodes := maps.Values(s.feasibleNodes)
+	result := s.runSimulation(session, scenario, statement, allVictims, nodes, s.victimNodes(session, nodes, allVictims))
 	if result != nil {
 		// Roll back on validator-rejected and error results too: the map is
 		// shared across the probe's scenarios and must stay derived from the
@@ -105,9 +108,9 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
-	victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) *solutionResult {
+	victimTasks []*pod_info.PodInfo, nodes, victimNodes []*node_info.NodeInfo) *solutionResult {
 	successfulSimulation, solutionVictims :=
-		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes)
+		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes, victimNodes)
 	if successfulSimulation {
 		return s.handleScenarioSolution(scenario, statement, solutionVictims)
 	}
@@ -118,6 +121,26 @@ func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
 	for potentialNodeFeasibleNode := range newFeasibleNodes {
 		delete(s.feasibleNodes, potentialNodeFeasibleNode)
 	}
+}
+
+// victimNodes returns where victims may be placed back. With pinned feasible nodes it adds the
+// victims' own nodes, so a victim the solution does not need is reprieved where it runs.
+func (s *byPodSolver) victimNodes(
+	ssn *framework.Session, nodes []*node_info.NodeInfo, victimTasks []*pod_info.PodInfo,
+) []*node_info.NodeInfo {
+	if !s.pinnedFeasibleNodes {
+		return nodes
+	}
+	victimNodes := slices.Clone(nodes)
+	for _, task := range victimTasks {
+		if _, found := s.feasibleNodes[task.NodeName]; found {
+			continue
+		}
+		if node, found := ssn.ClusterInfo.Nodes[task.NodeName]; found && !slices.Contains(victimNodes, node) {
+			victimNodes = append(victimNodes, node)
+		}
+	}
+	return victimNodes
 }
 
 func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []*pod_info.PodInfo) map[string]bool {
@@ -162,12 +185,13 @@ func (s *byPodSolver) handleScenarioSolution(
 }
 
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
-	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) (bool, *simulationVictims) {
+	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes, victimNodes []*node_info.NodeInfo,
+) (bool, *simulationVictims) {
 	pendingJob := scenario.GetPreemptor()
 
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
-		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
+		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, victimNodes, pendingJob,
 			jobsToAllocate, victimTasks, podgroup_info.PartialTaskAllocation)
 
 	if !isSuccessfulAllocations {

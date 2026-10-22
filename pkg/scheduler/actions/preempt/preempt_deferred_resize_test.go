@@ -231,7 +231,7 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name: "gang victim spanning nodes is evicted whole",
+			Name: "gang victim spanning nodes moves to its other node when it fits there",
 			Jobs: []*jobs_fake.TestJobBasic{
 				deferredResizeJob("resizer", "node0", 3, 1),
 				{
@@ -250,7 +250,39 @@ func deferredResizePreemptTopologies() []test_utils.TestTopologyBasic {
 			Queues: queues,
 			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 				"resizer": {NodeName: "node0", Status: pod_status.Running},
+			},
+			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"victim-0": {NodeName: "node1", Status: pod_status.Pipelined},
+				"victim-1": {NodeName: "node1", Status: pod_status.Running},
+			},
+			Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheEvictions: 1, NumberOfPipelineActions: 1,
+			}},
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "gang victim spanning nodes is evicted whole when it cannot move",
+			Jobs: []*jobs_fake.TestJobBasic{
+				deferredResizeJob("resizer", "node0", 3, 1),
+				{
+					Name:                "victim",
+					QueueName:           "queue0",
+					Priority:            constants.PriorityTrainNumber,
+					RequiredCPUsPerTask: 2,
+					RootSubGroupSet:     jobs_fake.DefaultSubGroup(2),
+					Tasks: []*tasks_fake.TestTaskBasic{
+						{State: pod_status.Running, NodeName: "node0"},
+						{State: pod_status.Running, NodeName: "node1"},
+					},
+				},
+				runningCPUJob("blocker", "queue0", "node1", resizerPriority, 2),
+			},
+			Nodes:  cpuNodes("node0", "node1"),
+			Queues: queues,
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer": {NodeName: "node0", Status: pod_status.Running},
 				"victim":  {Status: pod_status.Releasing},
+				"blocker": {NodeName: "node1", Status: pod_status.Running},
 			},
 			Mocks:                    evictionMocks(2),
 			DeferredResizePreemption: true,
@@ -678,7 +710,7 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name: "two resizing pods and a gang victim spanning nodes",
+			Name: "two resizing pods and a gang victim that moves to its other node",
 			Jobs: []*jobs_fake.TestJobBasic{
 				{
 					Name: "resizer", QueueName: "queue0", Priority: resizerPriority, RequiredCPUsPerTask: 2,
@@ -701,9 +733,14 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			Queues: queues,
 			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 				"resizer": {NodeName: "node0", Status: pod_status.Running},
-				"victim":  {Status: pod_status.Releasing},
 			},
-			Mocks:                    evictionMocks(2),
+			TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"victim-0": {NodeName: "node1", Status: pod_status.Pipelined},
+				"victim-1": {NodeName: "node1", Status: pod_status.Running},
+			},
+			Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheEvictions: 1, NumberOfPipelineActions: 1,
+			}},
 			DeferredResizePreemption: true,
 		},
 		{
@@ -955,6 +992,24 @@ func activeTasks(ssn *framework.Session, jobName string) int {
 		}
 	}
 	return count
+}
+
+// The solver restores a victim job to its minimum on the victims' own nodes, not only on the
+// resizing pod's node.
+func TestDeferredResizeKeepsMultiNodeVictimAtItsMinimum(t *testing.T) {
+	for localIndex := 0; localIndex < 3; localIndex++ {
+		t.Run(fmt.Sprintf("local pod at index %d", localIndex), func(t *testing.T) {
+			nodeNames := []string{"node1", "node2"}
+			nodeNames = append(nodeNames[:localIndex], append([]string{"node0"}, nodeNames[localIndex:]...)...)
+			victim := elasticJob("victim", constants.PriorityTrainNumber, 2, nodeNames...)
+			victim.RequiredCPUsPerTask = 2
+
+			ssn := runDeferredResizePreempt(t, []*jobs_fake.TestJobBasic{victim}, "node0", "node1", "node2")
+
+			requireResizeMadeRoom(t, ssn)
+			assert.GreaterOrEqual(t, activeTasks(ssn, "victim"), 2)
+		})
+	}
 }
 
 // Evicting the elastic job alone is not enough, so "other" goes too, which leaves room for one

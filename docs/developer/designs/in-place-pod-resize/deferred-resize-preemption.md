@@ -67,7 +67,9 @@ Then, one deferred pod at a time:
    (`PinFeasibleNodes`) and uses victims from that node only. The pod fits
    back iff `used − releasing − victims ≤ allocatable`, which is exactly the
    resize shortfall. Pipelining it back consumes the releasing room, so the
-   solver's reprieve step cannot give that room back to a victim.
+   solver's reprieve step cannot give that room back to a victim. Victims may
+   still be placed back on their own nodes, so a victim job spanning nodes is
+   restored to its minimum as in the regular path.
 5. **On success**, undo only the resizing pod's placement in the solver
    statement (`Statement.Unpipeline`) and commit it, so victims are evicted,
    or moved where the solver placed them back, as in the regular path. The
