@@ -58,8 +58,7 @@ Then, one deferred pod at a time:
    `Releasing` with a virtual status, so `ShouldAllocate` treats it as
    pending at its charged (desired) size, and the queue is credited back.
 3. **Run the action's eligibility checks** on the job in that state:
-   victim-invariant pre-predicates, plus `IsNonPreemptibleJobOverQueueQuota`
-   for the resizing pod (preempt) or `CanReclaimResources` on a copy of the
+   `IsNonPreemptibleJobOverQueueQuota` for the resizing pod (preempt) or `CanReclaimResources` on a copy of the
    job holding only its allocated pods and the resizing pod (reclaim), so the
    demand of its pending pods is not counted. Reclaim's victim filter gets
    the same copy, since it judges candidate queues by the reclaimer's demand.

@@ -4,7 +4,6 @@
 package deferredresize_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +14,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/deferredresize"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -506,26 +504,6 @@ func TestAttemptForJob_EachNodeIndependently(t *testing.T) {
 		assert.Equal(t, pod_status.Running, task.Status)
 		assert.False(t, task.IsVirtualStatus)
 	}
-}
-
-func TestAttempt_VictimInvariantPrePredicateFailureRestoresSession(t *testing.T) {
-	ssn := buildSession(t, baseTopology())
-	job, nodeTasks := resizerTasks(ssn)
-	before := snapshot(ssn)
-
-	calls := 0
-	ssn.AddVictimInvariantPrePredicateFn(func(task *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
-		calls++
-		return &api.VictimInvariantPrePredicateFailure{Err: errors.New("blocked")}
-	})
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, failIfSolverRuns(t))
-
-	assert.Positive(t, calls)
-	assert.False(t, succeeded)
-	assert.Empty(t, victims)
-	assert.Empty(t, job.JobFitErrors, "a running job must not get fit errors")
-	requireUnchanged(t, before, ssn)
 }
 
 func TestAttempt_RejectsSolutionPlacingResizerOnAnotherNode(t *testing.T) {

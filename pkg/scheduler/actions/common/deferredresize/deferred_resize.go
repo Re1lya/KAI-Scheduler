@@ -127,11 +127,6 @@ func attempt(
 		return false, nil, nil
 	}
 
-	if _, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, []*pod_info.PodInfo{task}); failure != nil {
-		log.InfraLogger.V(3).Infof("Deferred resize task <%s/%s> can't trigger %s: %v",
-			task.Namespace, task.Name, actionType, failure.Err)
-		return false, nil, nil
-	}
 	stmt, result := solve(job, node, task)
 	if stmt == nil {
 		return false, nil, result
