@@ -324,7 +324,6 @@ func (pp *numaPlugin) shouldScore(task *pod_info.PodInfo, topo *node_info.NumaTo
 	return pp.requestsAlignedDevice(task, topo)
 }
 
-// isGuaranteed reports whether the task's pod is Guaranteed QoS.
 // isQoSGatedResource reports whether a resource is NUMA-aligned by the kubelet only for Guaranteed
 // pods (cpu via CPU Manager, memory/hugepages via Memory Manager).
 func isQoSGatedResource(name v1.ResourceName) bool {
