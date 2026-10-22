@@ -1,0 +1,105 @@
+// Copyright 2026 NVIDIA CORPORATION
+// SPDX-License-Identifier: Apache-2.0
+
+package dynamicresources
+
+import (
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/dynamic-resource-allocation/structured"
+	"k8s.io/utils/ptr"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+)
+
+// releasingDevices are the devices allocated only to claims of releasing pods. They are freed once
+// those pods exit, so pipeline checks treat them as free unless a claim allocated in this session
+// has taken them. Built once per session, so a check costs O(releasing devices), not O(claims).
+type releasingDevices struct {
+	devices sets.Set[structured.DeviceID]
+	holders map[structured.DeviceID]int
+}
+
+func newReleasingDevices(
+	claims []*resourceapi.ResourceClaim, releasingPods *framework.ReleasingPods,
+) *releasingDevices {
+	r := &releasingDevices{
+		devices: sets.New[structured.DeviceID](),
+		holders: map[structured.DeviceID]int{},
+	}
+	if releasingPods.IsEmpty() {
+		return r
+	}
+	for _, claim := range claims {
+		if claim.Status.Allocation == nil || !isReservedOnlyFor(claim, releasingPods) {
+			continue
+		}
+		// Shared (consumable capacity) allocations stay allocated: pipelining onto them is not supported.
+		for _, result := range claim.Status.Allocation.Devices.Results {
+			if ptr.Deref(result.AdminAccess, false) || result.ShareID != nil {
+				continue
+			}
+			r.devices.Insert(structured.MakeDeviceID(result.Driver, result.Pool, result.Device))
+		}
+	}
+	return r
+}
+
+func isReservedOnlyFor(claim *resourceapi.ResourceClaim, releasingPods *framework.ReleasingPods) bool {
+	if len(claim.Status.ReservedFor) == 0 {
+		return false
+	}
+	for _, consumer := range claim.Status.ReservedFor {
+		if consumer.APIGroup != "" || consumer.Resource != "pods" || !releasingPods.Has(consumer.UID) {
+			return false
+		}
+	}
+	return true
+}
+
+// hold records that a claim allocated in this session uses the allocation's releasing devices.
+func (r *releasingDevices) hold(allocation *resourceapi.AllocationResult) {
+	r.forEachReleasingDevice(allocation, func(device structured.DeviceID) {
+		r.holders[device]++
+	})
+}
+
+// release undoes hold, when the pod that took the allocation's releasing devices leaves its claim.
+func (r *releasingDevices) release(allocation *resourceapi.AllocationResult) {
+	r.forEachReleasingDevice(allocation, func(device structured.DeviceID) {
+		if r.holders[device] > 0 {
+			r.holders[device]--
+		}
+	})
+}
+
+func (r *releasingDevices) forEachReleasingDevice(
+	allocation *resourceapi.AllocationResult, fn func(device structured.DeviceID),
+) {
+	if r == nil || allocation == nil || r.devices.Len() == 0 {
+		return
+	}
+	for _, result := range allocation.Devices.Results {
+		device := structured.MakeDeviceID(result.Driver, result.Pool, result.Device)
+		if r.devices.Has(device) {
+			fn(device)
+		}
+	}
+}
+
+// apply adjusts the claim tracker's allocated devices to the predicate mode.
+func (r *releasingDevices) apply(state *structured.AllocatedState, mode api.PredicateMode) {
+	if r == nil || r.devices.Len() == 0 {
+		return
+	}
+	// The tracker does not reference-count devices: dropping a pipelined claim that took a releasing
+	// device also drops the device, although the releasing pod's claim still holds it.
+	for device := range r.devices {
+		if mode == api.PipelinePredicate && r.holders[device] == 0 {
+			state.AllocatedDevices.Delete(device)
+		} else {
+			state.AllocatedDevices.Insert(device)
+		}
+	}
+}

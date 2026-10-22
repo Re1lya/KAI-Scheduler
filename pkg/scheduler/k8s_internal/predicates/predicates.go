@@ -73,16 +73,19 @@ func emptyPredicate(predicateName string) k8s_internal.SessionPredicate {
 func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates {
 	initiatedPlugins := ssn.InternalK8sPlugins()
 	predicates := k8s_internal.SessionPredicates{}
+	releasingNodes := newReleasingNodeView(ssn)
 
 	if plugin := initiatedPlugins.NodePorts; plugin == nil {
 		predicates[PodFitsHostPorts] = emptyPredicate(PodFitsHostPorts)
 	} else {
+		filter := k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeports.NodePorts))
 		predicates[PodFitsHostPorts] = k8s_internal.SessionPredicate{
 			Name:                PodFitsHostPorts,
 			IsPreFilterRequired: predicateRequired,
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodeports.NodePorts)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodeports.NodePorts)),
+			Filter:              filter,
+			PipelineFilter:      releasingNodes.pipelineFilter(filter),
 		}
 	}
 
@@ -113,12 +116,16 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 	if plugin := initiatedPlugins.PodAffinity; plugin == nil {
 		predicates[PodAffinity] = emptyPredicate(PodAffinity)
 	} else {
+		podAffinity := plugin.(*interpodaffinity.InterPodAffinity)
+		releasingAffinity := newReleasingPodAffinity(ssn, podAffinity)
+		filter := k8s_internal.FitPredicateConverter(ssn, podAffinity)
 		predicates[PodAffinity] = k8s_internal.SessionPredicate{
 			Name:                PodAffinity,
 			IsPreFilterRequired: predicateRequired,
-			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+			PreFilter:           releasingAffinity.preFilter(k8s_internal.FitPrePredicateConverter(ssn, ssn, podAffinity)),
 			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*interpodaffinity.InterPodAffinity)),
+			Filter:              filter,
+			PipelineFilter:      releasingAffinity.pipelineFilter(filter),
 		}
 	}
 
