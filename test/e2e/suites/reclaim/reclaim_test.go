@@ -60,6 +60,8 @@ var _ = Describe("Reclaim", Ordered, func() {
 			reclaimer := CreatePod(ctx, testCtx, reclaimerQueue, 1)
 			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, reclaimer)
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, reclaimer)
+
+			time.Sleep(2 * time.Minute)
 		})
 	})
 })

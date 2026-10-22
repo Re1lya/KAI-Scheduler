@@ -44,6 +44,12 @@ func main() {
 	filename := fs.String("filename", "", "location of the zipped JSON file")
 	cpuprofile := fs.String("cpuprofile", "", "write cpu profile to file")
 	memprofile := fs.String("memprofile", "", "write memory profile to file")
+	cycles := fs.Int("cycles", 1, "scheduling cycles to replay; a preemption needs more than one to complete")
+	dumpEvents := fs.Bool("dump-events", false,
+		"write the events the replay emitted to a sibling <base>.events.zip, for cmd/story to read")
+	decisionSnapshots := fs.Bool("create-decision-snapshots", false,
+		"capture the state before and after every cycle as <base>.<n>.snapshot.zip, each paired with "+
+			"the <base>.<n>.events.zip of the decisions that produced it; implies --dump-events")
 
 	_ = fs.Parse(os.Args[1:])
 	if filename == nil || len(*filename) == 0 {
@@ -114,25 +120,59 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	ssn, err := framework.OpenSession(
-		schedulerCache, snapshot.Config, snapshot.SchedulerParams, "", &http.ServeMux{},
-	)
-	if err != nil {
-		log.InfraLogger.Fatalf(err.Error(), err)
-	}
-	defer framework.CloseSession(ssn)
-
 	actionDurations := make(map[string]time.Duration)
-	actions, _ := conf_util.GetActionsFromConfig(snapshot.Config)
-	for _, action := range actions {
-		log.InfraLogger.SetAction(string(action.Name()))
-		metrics.SetCurrentAction(string(action.Name()))
-		actionStartTime := time.Now()
-		action.Execute(ssn)
-		elapsed := time.Since(actionStartTime)
-		metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))
-		log.InfraLogger.V(2).Infof("Action <%s> completed in %v", action.Name(), elapsed)
-		actionDurations[string(action.Name())] = elapsed
+	configuredActions, _ := conf_util.GetActionsFromConfig(snapshot.Config)
+	events := newEventTracker(kubeClient)
+	// One extra pass when capturing: it runs no actions and exists to record the final state.
+	passes := *cycles
+	if *decisionSnapshots {
+		passes++
+	}
+	for cycle := range passes {
+		ssn, err := framework.OpenSession(
+			schedulerCache, snapshot.Config, snapshot.SchedulerParams, "", &http.ServeMux{},
+		)
+		if err != nil {
+			log.InfraLogger.Fatalf(err.Error(), err)
+		}
+
+		if *decisionSnapshots {
+			if err := writeCycle(*filename, cycle+1, ssn, events); err != nil {
+				log.InfraLogger.Fatalf("Failed to capture cycle %d: %v", cycle+1, err)
+			}
+		}
+		if cycle == *cycles {
+			framework.CloseSession(ssn)
+			break
+		}
+
+		for _, action := range configuredActions {
+			log.InfraLogger.SetAction(string(action.Name()))
+			metrics.SetCurrentAction(string(action.Name()))
+			actionStartTime := time.Now()
+			action.Execute(ssn)
+			elapsed := time.Since(actionStartTime)
+			metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))
+			log.InfraLogger.V(2).Infof("Action <%s> completed in %v", action.Name(), elapsed)
+			actionDurations[string(action.Name())] += elapsed
+		}
+		framework.CloseSession(ssn)
+
+		// The evictor deletes pods on its own goroutine; the next cycle must see the freed node.
+		time.Sleep(cycleSettleDelay)
+		schedulerCache.WaitForCacheSync(stopCh)
+	}
+
+	if *dumpEvents && !*decisionSnapshots {
+		eventsFile := eventsFileName(*filename)
+		emitted, err := events.sinceLastCall(context.TODO())
+		if err == nil {
+			err = writeEvents(eventsFile, emitted)
+		}
+		if err != nil {
+			log.InfraLogger.Fatalf("Failed to write events: %v", err)
+		}
+		log.InfraLogger.V(1).Infof("Wrote %d replayed events to %s", len(emitted), eventsFile)
 	}
 
 	if *memprofile != "" {

@@ -1,0 +1,700 @@
+<!doctype html>
+<!-- Copyright 2026 NVIDIA CORPORATION / SPDX-License-Identifier: Apache-2.0
+     Served by `story --serve`. Self-contained on purpose: no font, script or style is fetched
+     from the network, so the page works on an air-gapped jump host. -->
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAI Scheduling Story</title>
+<style>
+/* Layout: verdict header, then a phase rail that drives a node map of the whole cluster,
+   with the decision log underneath. Everything aggregates first and expands on demand. */
+:root {
+  --bg: #f5f7f8;
+  --surface: #ffffff;
+  --surface-2: #e9edef;
+  --fg: #171c21;
+  --fg-dim: #5c6771;
+  --line: #d6dce0;
+  --line-strong: #b6c0c7;
+  --accent: #41701f;
+  --pending: #a8491a;
+  --pipelined: #9a6a12;
+  --allocated: #2a628f;
+  --bound: #41701f;
+  --evicting: #94302f;
+  --font-ui: ui-sans-serif, system-ui, sans-serif;
+  --font-data: ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 5px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101418;
+    --surface: #191f24;
+    --surface-2: #222a30;
+    --fg: #e2e8ec;
+    --fg-dim: #8b98a2;
+    --line: #2c353c;
+    --line-strong: #44505a;
+    --accent: #8ac63f;
+    --pending: #e0834a;
+    --pipelined: #d6a33e;
+    --allocated: #5da3dc;
+    --bound: #8ac63f;
+    --evicting: #d96b6b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101418;
+  --surface: #191f24;
+  --surface-2: #222a30;
+  --fg: #e2e8ec;
+  --fg-dim: #8b98a2;
+  --line: #2c353c;
+  --line-strong: #44505a;
+  --accent: #8ac63f;
+  --pending: #e0834a;
+  --pipelined: #d6a33e;
+  --allocated: #5da3dc;
+  --bound: #8ac63f;
+  --evicting: #d96b6b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 0;
+}
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--fg-dim);
+}
+
+/* ---- story picker ---- */
+.picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.picker button {
+  font: inherit; font-size: 13px; font-weight: 500;
+  padding: 6px 12px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); color: var(--fg-dim);
+  border: 1px solid var(--line);
+}
+.picker button[aria-pressed="true"] {
+  background: var(--fg); color: var(--bg); border-color: var(--fg);
+}
+.picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- verdict ---- */
+.verdict {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 18px 20px;
+  display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: flex-start;
+}
+.verdict .ident { min-width: 0; flex: 1 1 260px; }
+.verdict h1 { font-size: 21px; letter-spacing: -0.01em; }
+.verdict .sub { color: var(--fg-dim); font-size: 13px; margin-top: 3px; word-break: break-all; }
+.state {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; padding: 5px 11px;
+  border-radius: 999px; border: 1px solid currentColor;
+}
+.state .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.state[data-s="Running"] { color: var(--bound); }
+.state[data-s="Pending"] { color: var(--pending); }
+.state[data-s="Evicted"] { color: var(--evicting); }
+.state[data-s="Deleted"], .state[data-s="Unknown"] { color: var(--fg-dim); }
+.why {
+  flex: 1 1 100%; font-size: 13px; color: var(--fg-dim);
+  border-left: 2px solid var(--pending); padding-left: 12px; min-width: 0;
+}
+/* What the story cannot tell: a missing events file, a state read from a snapshot. */
+.caveats { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.caveat {
+  font-size: 12.5px; color: var(--fg-dim); border-left: 2px solid var(--evicting);
+  padding-left: 12px; overflow-wrap: anywhere;
+}
+.caveat b { color: var(--evicting); font-weight: 600; }
+
+/* ---- panels ---- */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.panel > header {
+  padding: 14px 18px; border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline;
+}
+.panel > header h2 { font-size: 15px; }
+.panel > header .note { font-size: 12.5px; color: var(--fg-dim); }
+.panel .body { padding: 18px; }
+
+/* ---- phase rail ---- */
+.rail { display: flex; flex-wrap: wrap; gap: 8px; }
+.phase {
+  flex: 1 1 150px; min-width: 0; text-align: left; cursor: pointer;
+  font: inherit; color: var(--fg); background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: var(--r);
+  padding: 10px 12px; display: grid; gap: 2px;
+}
+.phase:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.phase[aria-pressed="true"] { border-color: currentColor; background: var(--surface); }
+.phase[data-d="Pipelined"] { color: var(--pipelined); }
+.phase[data-d="Allocated"] { color: var(--allocated); }
+.phase[data-d="Bound"] { color: var(--bound); }
+.phase .t { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
+.phase .n { font-size: 19px; font-weight: 600; color: var(--fg); font-family: var(--font-data); }
+.phase .m { font-size: 12px; color: var(--fg-dim); }
+
+/* ---- node map ---- */
+.mapmeta {
+  display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+  margin-bottom: 14px; font-size: 12.5px; color: var(--fg-dim);
+}
+.legend { display: flex; flex-wrap: wrap; gap: 14px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch {
+  width: 13px; height: 13px; border-radius: 3px;
+  border: 1px solid var(--line-strong); background: var(--surface-2);
+}
+.swatch.one { background: color-mix(in srgb, var(--accent) 38%, var(--surface-2)); border-color: transparent; }
+.swatch.two { background: var(--accent); border-color: transparent; }
+.swatch.moved { background: var(--surface-2); border: 2px solid var(--pipelined); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(26px, 1fr));
+  gap: 4px;
+}
+.cell {
+  aspect-ratio: 1; border-radius: 3px; cursor: pointer; padding: 0;
+  background: var(--surface-2); border: 1px solid var(--line);
+  font: 600 10px/1 var(--font-data); color: transparent;
+  display: grid; place-items: center;
+  transition: background-color .35s ease, border-color .35s ease, transform .2s ease;
+}
+.cell[data-n="1"] { background: color-mix(in srgb, var(--accent) 38%, var(--surface-2)); border-color: transparent; color: var(--fg); }
+.cell[data-n="2"] { background: var(--accent); border-color: transparent; color: #fff; }
+:root[data-theme="dark"] .cell[data-n="2"],
+.cell[data-n="2"] { color: #0d1410; }
+.cell[data-moved="1"] { border: 2px solid var(--pipelined); }
+.cell:hover, .cell:focus-visible { transform: scale(1.22); outline: none; z-index: 2; position: relative; }
+.cell[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--fg); }
+@media (prefers-reduced-motion: reduce) { .cell { transition: none; } }
+
+.nodedetail {
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--line); font-size: 13px;
+}
+.nodedetail .pods { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  font: 500 11.5px/1 var(--font-data); padding: 5px 8px; border-radius: 3px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--fg-dim);
+}
+.chip.here { color: var(--fg); border-color: var(--line-strong); }
+
+/* ---- moves ---- */
+.moves { display: grid; gap: 6px; }
+.move {
+  display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr);
+  gap: 10px; align-items: center; font-size: 13px;
+  padding: 9px 12px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.move .from, .move .to { font-family: var(--font-data); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+.move .from { color: var(--fg-dim); }
+.move .to { color: var(--pipelined); font-weight: 600; text-align: right; }
+.move .arrow { color: var(--fg-dim); }
+.move .cnt { grid-column: 1 / -1; font-size: 12px; color: var(--fg-dim); }
+
+/* ---- log ---- */
+.log { display: grid; gap: 1px; background: var(--line); border-radius: var(--r); overflow: hidden; }
+.row { background: var(--surface); padding: 11px 14px; display: grid; gap: 4px; }
+.row .top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.row time { font-family: var(--font-data); font-size: 12.5px; color: var(--fg-dim); white-space: nowrap; }
+.tag {
+  font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap;
+}
+.tag[data-d="Pending"] { color: var(--pending); }
+.tag[data-d="Pipelined"] { color: var(--pipelined); }
+.tag[data-d="Allocated"] { color: var(--allocated); }
+.tag[data-d="Bound"] { color: var(--bound); }
+.tag[data-d="Evicting"], .tag[data-d="Evicted"] { color: var(--evicting); }
+.tag[data-d="PodGroupCreated"], .tag[data-d="NotReady"], .tag[data-d="Stale"] { color: var(--fg-dim); }
+.row .who { font-size: 12.5px; color: var(--fg-dim); font-family: var(--font-data); overflow-wrap: anywhere; }
+.row .msg { font-size: 13px; color: var(--fg); overflow-wrap: anywhere; }
+.row .rep { font-size: 12px; color: var(--fg-dim); font-family: var(--font-data); }
+details.more > summary {
+  cursor: pointer; font-size: 12px; color: var(--fg-dim); list-style: none;
+  padding: 3px 0; width: fit-content;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "▸ "; }
+details.more[open] > summary::before { content: "▾ "; }
+details.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+footer { font-size: 12px; color: var(--fg-dim); border-top: 1px solid var(--line); padding-top: 14px; }
+footer code { font-family: var(--font-data); font-size: 11.5px; }
+@media (max-width: 560px) {
+  .grid { grid-template-columns: repeat(auto-fill, minmax(22px, 1fr)); }
+  .verdict h1 { font-size: 18px; }
+}
+</style>
+
+<div class="wrap">
+  <div class="picker" id="picker" role="group" aria-label="Workload"></div>
+
+  <section class="verdict" id="verdict"></section>
+
+  <section class="panel">
+    <header>
+      <h2>Where the pods landed</h2>
+      <span class="note" id="mapnote"></span>
+    </header>
+    <div class="body">
+      <div class="rail" id="rail" role="group" aria-label="Scheduling phase"></div>
+      <div class="mapmeta" id="mapmeta"></div>
+      <div class="grid" id="grid"></div>
+      <div class="nodedetail" id="nodedetail"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="movepanel" hidden>
+    <header>
+      <h2>Pods that changed node</h2>
+      <span class="note" id="movenote"></span>
+    </header>
+    <div class="body"><div class="moves" id="moves"></div></div>
+  </section>
+
+  <section class="panel">
+    <header>
+      <h2>Decisions</h2>
+      <span class="note" id="lognote"></span>
+    </header>
+    <div class="body"><div class="log" id="log"></div></div>
+  </section>
+
+  <footer>
+    Built from <code>story --output json</code>. Every row and every node here comes from pod,
+    PodGroup, BindRequest and event data the scheduler wrote; nothing is inferred except where a row says so.
+  </footer>
+</div>
+
+<script id="story-data" type="application/json">__STORY_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  var STORIES = JSON.parse(document.getElementById("story-data").textContent);
+  // Non-zero only when the server reads a live cluster; files never change under us.
+  var POLL_MS = __STORY_POLL_MS__;
+  // What the viewer is looking at, so a refresh does not throw it away.
+  var VIEW = { key: null, phase: null, node: null };
+  var PIPELINED_NODE = /was pipelined to node (\S+)$/;
+  var BOUND_NODE = /to node (\S+?)\.?$/;
+  // Same-decision entries this close together are one wave of the scheduler's loop.
+  var WAVE_GAP_MS = 15000;
+
+  function nodeOf(entry) {
+    if (entry.node) return entry.node;
+    var m = PIPELINED_NODE.exec(entry.message || "") || BOUND_NODE.exec(entry.message || "");
+    return m ? m[1] : null;
+  }
+  function timeOf(entry) { return new Date(entry.time).getTime(); }
+  function clock(iso) {
+    var d = new Date(iso);
+    return String(d.getHours()).padStart(2, "0") + ":" +
+           String(d.getMinutes()).padStart(2, "0") + ":" +
+           String(d.getSeconds()).padStart(2, "0");
+  }
+  function duration(ms) {
+    var s = Math.round(ms / 1000);
+    if (s < 60) return s + "s";
+    return Math.floor(s / 60) + "m" + (s % 60 ? " " + (s % 60) + "s" : "");
+  }
+  function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+  function naturalKey(name) {
+    var m = /^(.*?)(\d+)$/.exec(name);
+    return m ? [m[1], parseInt(m[2], 10)] : [name, -1];
+  }
+  function byNatural(a, b) {
+    var ka = naturalKey(a), kb = naturalKey(b);
+    return ka[0] === kb[0] ? ka[1] - kb[1] : ka[0].localeCompare(kb[0]);
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function podsOf(entry) {
+    return (entry.subjects || []).map(function (s) { return s.name; });
+  }
+
+  /* One group per wave of the scheduler's loop: entries of the same decision within a few
+     seconds of the wave's start. This turns 1,592 entries into a handful of rows, while
+     keeping two pipeline waves 30s apart apart, which is where the re-pipelining shows.
+     Each group also records the full pod -> node picture as of that moment, so the map can
+     show any phase, and which pods changed node to get there. */
+  function timeline(entries) {
+    var sorted = entries.slice().sort(function (a, b) { return timeOf(a) - timeOf(b); });
+    var groups = [];
+    var placed = {};
+    sorted.forEach(function (entry) {
+      var last = groups[groups.length - 1];
+      if (!last || last.decision !== entry.decision || timeOf(entry) - last.start > WAVE_GAP_MS) {
+        groups.push({
+          decision: entry.decision, start: timeOf(entry), end: timeOf(entry),
+          entries: [], changed: {}, pods: 0, places: false
+        });
+        last = groups[groups.length - 1];
+      }
+      last.entries.push(entry);
+      last.end = Math.max(last.end, entry.until ? new Date(entry.until).getTime() : timeOf(entry));
+
+      var node = nodeOf(entry);
+      if (!node) return;
+      last.places = true;
+      podsOf(entry).forEach(function (pod) {
+        if (placed[pod] && placed[pod] !== node) last.changed[pod] = placed[pod];
+        placed[pod] = node;
+        last.pods += 1;
+      });
+      last.placement = Object.assign({}, placed);
+    });
+    // Carry the placement forward so a later group without node data still shows the picture.
+    var carried = {};
+    groups.forEach(function (group) {
+      if (group.placement) carried = group.placement;
+      group.placement = carried;
+    });
+    return groups;
+  }
+
+  function render(key) {
+    var story = STORIES[key];
+    var groups = timeline(story.entries);
+    var phases = groups.filter(function (g) { return g.places; });
+    var state = { phase: phases.length - 1, node: null };
+    var resuming = VIEW.key === key;
+    if (resuming && VIEW.phase !== null && VIEW.phase < phases.length) state.phase = VIEW.phase;
+    VIEW.key = key;
+
+    renderPicker(key);
+    renderVerdict(story);
+    renderLog(groups, story);
+
+    var rail = document.getElementById("rail");
+    var grid = document.getElementById("grid");
+
+    var nodes = [];
+    phases.forEach(function (p) {
+      Object.keys(p.placement).forEach(function (pod) {
+        if (nodes.indexOf(p.placement[pod]) < 0) nodes.push(p.placement[pod]);
+      });
+    });
+    nodes.sort(byNatural);
+    if (resuming && VIEW.node && nodes.indexOf(VIEW.node) >= 0) state.node = VIEW.node;
+    VIEW.phase = state.phase;
+    VIEW.node = state.node;
+
+    function drawRail() {
+      rail.textContent = "";
+      if (!phases.length) {
+        rail.appendChild(el("p", "note", "This workload was never placed on a node."));
+        return;
+      }
+      phases.forEach(function (phase, i) {
+        var moved = Object.keys(phase.changed).length;
+        var b = el("button", "phase");
+        b.type = "button";
+        b.dataset.d = phase.decision;
+        b.setAttribute("aria-pressed", String(i === state.phase));
+        b.appendChild(el("span", "t", (i > 0 && phase.decision === phases[i - 1].decision ? "re-" : "") + phase.decision));
+        b.appendChild(el("span", "n", clock(new Date(phase.start).toISOString())));
+        b.appendChild(el("span", "m", moved
+          ? plural(moved, "pod moved", "pods moved")
+          : plural(phase.pods, "pod", "pods") + " on " + plural(countNodes(phase), "node", "nodes")));
+        b.addEventListener("click", function () {
+          state.phase = VIEW.phase = i;
+          state.node = VIEW.node = null;
+          drawRail();
+          drawGrid();
+        });
+        rail.appendChild(b);
+      });
+    }
+
+    function countNodes(phase) {
+      var seen = {};
+      Object.keys(phase.placement).forEach(function (pod) { seen[phase.placement[pod]] = 1; });
+      return Object.keys(seen).length;
+    }
+
+    function drawGrid() {
+      var phase = phases[state.phase];
+      grid.textContent = "";
+      var meta = document.getElementById("mapmeta");
+      var detail = document.getElementById("nodedetail");
+      meta.textContent = "";
+      detail.textContent = "";
+
+      if (!phase) {
+        document.getElementById("mapnote").textContent = "no placement recorded";
+        return;
+      }
+
+      var onNode = {};
+      Object.keys(phase.placement).forEach(function (pod) {
+        (onNode[phase.placement[pod]] = onNode[phase.placement[pod]] || []).push(pod);
+      });
+      var movedTo = {};
+      Object.keys(phase.changed).forEach(function (pod) { movedTo[phase.placement[pod]] = 1; });
+
+      document.getElementById("mapnote").textContent =
+        nodes.length + " nodes this workload has touched";
+
+      var used = Object.keys(onNode).length;
+      meta.appendChild(el("strong", "mono",
+        plural(Object.keys(phase.placement).length, "pod", "pods") + " on " + plural(used, "node", "nodes")));
+      var legend = el("div", "legend");
+      [["", "no pod here"], ["one", "1 pod"], ["two", "2 pods"], ["moved", "moved in this phase"]]
+        .forEach(function (pair) {
+          var s = el("span");
+          s.appendChild(el("i", "swatch " + pair[0]));
+          s.appendChild(el("span", null, pair[1]));
+          legend.appendChild(s);
+        });
+      meta.appendChild(legend);
+
+      nodes.forEach(function (node) {
+        var here = onNode[node] || [];
+        var b = el("button", "cell");
+        b.type = "button";
+        b.dataset.n = String(Math.min(here.length, 2));
+        if (movedTo[node]) b.dataset.moved = "1";
+        b.setAttribute("aria-pressed", String(state.node === node));
+        b.setAttribute("aria-label", node + ", " + plural(here.length, "pod", "pods"));
+        b.title = node + " — " + plural(here.length, "pod", "pods");
+        b.textContent = here.length ? String(here.length) : "";
+        b.addEventListener("click", function () {
+          state.node = VIEW.node = state.node === node ? null : node;
+          drawGrid();
+        });
+        grid.appendChild(b);
+      });
+
+      if (state.node) {
+        var here = onNode[state.node] || [];
+        detail.appendChild(el("strong", "mono", state.node));
+        detail.appendChild(document.createTextNode(" — " + plural(here.length, "pod", "pods") + " of this workload"));
+        var pods = el("div", "pods");
+        here.slice(0, 40).sort(byNatural).forEach(function (pod) {
+          var chip = el("span", "chip here", pod);
+          if (phase.changed[pod]) chip.textContent = pod + "  ← " + phase.changed[pod];
+          pods.appendChild(chip);
+        });
+        if (here.length > 40) pods.appendChild(el("span", "chip", "+" + (here.length - 40) + " more"));
+        if (!here.length) pods.appendChild(el("span", "chip", "none in this phase"));
+        detail.appendChild(pods);
+      } else {
+        detail.appendChild(el("span", null, "Select a node to list the pods on it."));
+      }
+
+      drawMoves(phase);
+    }
+
+    function drawMoves(phase) {
+      var panel = document.getElementById("movepanel");
+      var list = document.getElementById("moves");
+      var pods = Object.keys(phase.changed);
+      panel.hidden = pods.length === 0;
+      if (!pods.length) return;
+
+      var routes = {};
+      pods.forEach(function (pod) {
+        var key = phase.changed[pod] + "\u0000" + phase.placement[pod];
+        (routes[key] = routes[key] || []).push(pod);
+      });
+      var keys = Object.keys(routes).sort(function (a, b) { return routes[b].length - routes[a].length; });
+
+      document.getElementById("movenote").textContent =
+        plural(pods.length, "pod", "pods") + " across " + plural(keys.length, "route", "routes") +
+        ", at " + clock(new Date(phase.start).toISOString());
+
+      list.textContent = "";
+      keys.slice(0, 12).forEach(function (key) {
+        var parts = key.split("\u0000");
+        var row = el("div", "move");
+        row.appendChild(el("span", "from", parts[0]));
+        row.appendChild(el("span", "arrow", "→"));
+        row.appendChild(el("span", "to", parts[1]));
+        row.appendChild(el("span", "cnt", routes[key].sort(byNatural).join(", ")));
+        list.appendChild(row);
+      });
+      if (keys.length > 12) {
+        list.appendChild(el("div", "move cnt", "+" + (keys.length - 12) + " more routes"));
+      }
+    }
+
+    drawRail();
+    drawGrid();
+  }
+
+  function renderPicker(active) {
+    var picker = document.getElementById("picker");
+    picker.textContent = "";
+    Object.keys(STORIES).forEach(function (key) {
+      var b = el("button", null, STORIES[key].label);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(key === active));
+      b.addEventListener("click", function () { render(key); });
+      picker.appendChild(b);
+    });
+  }
+
+  function renderVerdict(story) {
+    var v = document.getElementById("verdict");
+    v.textContent = "";
+    var ident = el("div", "ident");
+    var kind = story.root.kind + (story.root.group ? "." + story.root.group : "");
+    ident.appendChild(el("h1", null, kind + " " + story.root.namespace + "/" + story.root.name));
+    var sub = el("div", "sub");
+    sub.appendChild(el("span", "mono", "uid " + story.root.uid));
+    (story.podGroups || []).forEach(function (pg) {
+      sub.appendChild(document.createTextNode(" · "));
+      sub.appendChild(el("span", "mono", pg.name));
+    });
+    ident.appendChild(sub);
+    v.appendChild(ident);
+
+    var st = el("div", "state");
+    st.dataset.s = story.verdict.state;
+    st.appendChild(el("i", "dot"));
+    st.appendChild(el("span", null, story.verdict.state));
+    var box = el("div");
+    box.appendChild(st);
+    box.appendChild(el("div", "sub", story.verdict.pods));
+    v.appendChild(box);
+
+    if (story.verdict.why) v.appendChild(el("div", "why", story.verdict.why));
+
+    if ((story.notes || []).length) {
+      var caveats = el("div", "caveats");
+      story.notes.forEach(function (note) {
+        var line = el("div", "caveat");
+        line.appendChild(el("b", null, "note "));
+        line.appendChild(document.createTextNode(note));
+        caveats.appendChild(line);
+      });
+      v.appendChild(caveats);
+    }
+  }
+
+  function renderLog(groups, story) {
+    var log = document.getElementById("log");
+    log.textContent = "";
+    document.getElementById("lognote").textContent =
+      groups.length + " from " + plural(story.entries.length, "entry", "entries");
+
+    groups.forEach(function (wave) {
+      var pods = {};
+      var kindSet = {};
+      wave.entries.forEach(function (e) {
+        podsOf(e).forEach(function (p) { pods[p] = 1; });
+        (e.subjects || []).forEach(function (s) { kindSet[s.kind] = 1; });
+      });
+      var podList = Object.keys(pods);
+      var repeats = wave.entries.reduce(function (n, e) { return n + (e.count || 1); }, 0);
+
+      var row = el("div", "row");
+      var top = el("div", "top");
+      var time = el("time", null, clock(new Date(wave.start).toISOString()) +
+        (wave.end > wave.start ? " – " + clock(new Date(wave.end).toISOString()) : ""));
+      top.appendChild(time);
+      var moved = Object.keys(wave.changed).length;
+      var tag = el("span", "tag", moved ? "re-" + wave.decision : wave.decision);
+      tag.dataset.d = wave.decision;
+      top.appendChild(tag);
+      // A wave can mix kinds: the scheduler reports being over quota on the PodGroup and on every
+      // pod of it, so the first entry's kind would mislabel the rest.
+      var kindNames = Object.keys(kindSet);
+      var kinds = kindNames.length === 1 ? kindNames[0] : "subject";
+      top.appendChild(el("span", "who",
+        podList.length === 1 ? kinds.toLowerCase() + "/" + podList[0]
+          : plural(podList.length, kinds.toLowerCase(), kinds.toLowerCase() + "s")));
+      row.appendChild(top);
+
+      var messages = {};
+      wave.entries.forEach(function (e) { if (e.message) messages[e.message] = (messages[e.message] || 0) + 1; });
+      var unique = Object.keys(messages);
+      if (unique.length === 1) {
+        row.appendChild(el("div", "msg", unique[0]));
+      } else if (unique.length > 1) {
+        row.appendChild(el("div", "msg", unique.length + " variants, e.g. " + unique[0]));
+      }
+
+      if (moved) {
+        row.appendChild(el("div", "rep", plural(moved, "pod", "pods") + " moved to a different node"));
+      }
+      if (repeats > wave.entries.length) {
+        row.appendChild(el("div", "rep", "retried " + repeats + "× over " + duration(wave.end - wave.start)));
+      }
+
+      if (podList.length > 1) {
+        var more = el("details", "more");
+        more.appendChild(el("summary", null, "show " + podList.length + " pods"));
+        var pods2 = el("div", "pods");
+        pods2.style.display = "flex";
+        pods2.style.flexWrap = "wrap";
+        pods2.style.gap = "6px";
+        pods2.style.marginTop = "6px";
+        podList.sort(byNatural).slice(0, 80).forEach(function (p) {
+          pods2.appendChild(el("span", "chip", p));
+        });
+        if (podList.length > 80) pods2.appendChild(el("span", "chip", "+" + (podList.length - 80) + " more"));
+        more.appendChild(pods2);
+        row.appendChild(more);
+      }
+      log.appendChild(row);
+    });
+  }
+
+  render(Object.keys(STORIES)[0]);
+
+  // A live cluster moves while the page is open: re-read it and redraw only what changed, keeping
+  // the selected phase and node so the view does not jump under the viewer.
+  if (POLL_MS > 0) {
+    var served = JSON.stringify(STORIES);
+    setInterval(function () {
+      if (document.hidden) return;
+      fetch("story.json", { cache: "no-store" })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (fresh) {
+          if (!fresh || !Object.keys(fresh).length) return;
+          var text = JSON.stringify(fresh);
+          if (text === served) return;
+          served = text;
+          STORIES = fresh;
+          render(STORIES[VIEW.key] ? VIEW.key : Object.keys(STORIES)[0]);
+        })
+        .catch(function () { /* the server went away; the next tick tries again */ });
+    }, POLL_MS);
+  }
+})();
+</script>

@@ -1,0 +1,146 @@
+{
+  "pods": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "low-prio-r7k2d",
+        "uid": "f3c91a07-5e2b-4d68-8a14-7b0e9d6c2f31",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374"
+        }
+      },
+      "status": {
+        "phase": "Pending"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "high-prio-m2w8t",
+        "uid": "0a8d4e6b-3c19-4b75-9f20-d1e5a7c3b948",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-high-prio-d47e5a90-1f6b-4c82-a3e9-8b0d2c71f5a6"
+        }
+      },
+      "status": {
+        "phase": "Running"
+      }
+    }
+  ],
+  "podGroups": [
+    {
+      "apiVersion": "scheduling.run.ai/v2alpha2",
+      "kind": "PodGroup",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374",
+        "uid": "b6a1c8e2-7d35-4f90-9e12-0c4b8a5d3f67",
+        "creationTimestamp": "2026-10-20T11:00:00Z",
+        "annotations": {
+          "kai.scheduler/top-owner-metadata": "name: low-prio\nuid: 3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374\ngroup: batch\nversion: v1\nkind: Job\n"
+        }
+      },
+      "spec": {
+        "queue": "research"
+      },
+      "status": {}
+    },
+    {
+      "apiVersion": "scheduling.run.ai/v2alpha2",
+      "kind": "PodGroup",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "pg-high-prio-d47e5a90-1f6b-4c82-a3e9-8b0d2c71f5a6",
+        "uid": "29f0b5c3-6a81-4d7e-b4c2-e1a39d8f0b52",
+        "creationTimestamp": "2026-10-20T11:30:05Z",
+        "annotations": {
+          "kai.scheduler/top-owner-metadata": "name: high-prio\nuid: d47e5a90-1f6b-4c82-a3e9-8b0d2c71f5a6\ngroup: batch\nversion: v1\nkind: Job\n"
+        }
+      },
+      "spec": {
+        "queue": "research"
+      },
+      "status": {}
+    }
+  ],
+  "bindRequests": [],
+  "events": [
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374.evict.113010",
+        "creationTimestamp": "2026-10-20T11:30:10Z",
+        "annotations": {
+          "num-evicted-pods": "1",
+          "evictor-action-type": "preempt",
+          "evictor-pod-group-name": "pg-high-prio-d47e5a90-1f6b-4c82-a3e9-8b0d2c71f5a6",
+          "evictor-pod-group-namespace": "team-b"
+        }
+      },
+      "involvedObject": {
+        "kind": "PodGroup",
+        "namespace": "team-b",
+        "name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374",
+        "uid": "b6a1c8e2-7d35-4f90-9e12-0c4b8a5d3f67"
+      },
+      "reason": "Evict",
+      "message": "Pod team-b/low-prio-x9q4m was preempted by higher priority workload team-b/pg-high-prio-d47e5a90-1f6b-4c82-a3e9-8b0d2c71f5a6",
+      "type": "Normal",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T11:30:10Z",
+      "lastTimestamp": "2026-10-20T11:30:10Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374.unschedulable.113012",
+        "creationTimestamp": "2026-10-20T11:30:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "PodGroup",
+        "namespace": "team-b",
+        "name": "pg-low-prio-3b8d2f61-9c4a-4e07-b1d8-5f2a6c90e374",
+        "uid": "b6a1c8e2-7d35-4f90-9e12-0c4b8a5d3f67"
+      },
+      "reason": "Unschedulable",
+      "message": "Unschedulable: 0/6 nodes are available: 6 Insufficient nvidia.com/gpu. preemption: 0/6 nodes are available: no lower-priority pods to preempt.",
+      "type": "Normal",
+      "count": 130,
+      "firstTimestamp": "2026-10-20T11:30:12Z",
+      "lastTimestamp": "2026-10-20T11:41:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-b",
+        "name": "low-prio-r7k2d.unschedulable.113012",
+        "creationTimestamp": "2026-10-20T11:30:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-b",
+        "name": "low-prio-r7k2d",
+        "uid": "f3c91a07-5e2b-4d68-8a14-7b0e9d6c2f31"
+      },
+      "reason": "Unschedulable",
+      "message": "Unschedulable: 0/6 nodes are available: 6 Insufficient nvidia.com/gpu. preemption: 0/6 nodes are available: no lower-priority pods to preempt.",
+      "type": "Warning",
+      "count": 130,
+      "firstTimestamp": "2026-10-20T11:30:12Z",
+      "lastTimestamp": "2026-10-20T11:41:02Z"
+    }
+  ]
+}

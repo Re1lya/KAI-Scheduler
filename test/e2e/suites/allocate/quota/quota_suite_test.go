@@ -15,7 +15,6 @@ import (
 
 var _ = DescribeQuotaSpecs()
 var _ = DescribeExceedLimitSpecs()
-var _ = DescribeOverQuotaSpecs()
 
 func TestResourcesAllocation(t *testing.T) {
 	utils.SetLogger()

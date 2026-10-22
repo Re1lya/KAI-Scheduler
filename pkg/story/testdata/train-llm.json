@@ -1,0 +1,437 @@
+{
+  "pods": [
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-0",
+        "uid": "a00e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a40",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8"
+        }
+      },
+      "status": {
+        "phase": "Running"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-1",
+        "uid": "a10e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a41",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8"
+        }
+      },
+      "status": {
+        "phase": "Running"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-2",
+        "uid": "a20e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a42",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8"
+        }
+      },
+      "status": {
+        "phase": "Running"
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Pod",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-3",
+        "uid": "a30e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a43",
+        "creationTimestamp": "2026-10-20T10:02:10Z",
+        "annotations": {
+          "pod-group-name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8"
+        }
+      },
+      "status": {
+        "phase": "Running"
+      }
+    }
+  ],
+  "podGroups": [
+    {
+      "apiVersion": "scheduling.run.ai/v2alpha2",
+      "kind": "PodGroup",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8",
+        "uid": "5d08f3b7-2e46-4a19-a0c3-9b71e8d25f64",
+        "creationTimestamp": "2026-10-20T10:02:11Z",
+        "annotations": {
+          "kai.scheduler/top-owner-metadata": "name: train-llm\nuid: c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8\ngroup: kubeflow.org\nversion: v1\nkind: PyTorchJob\n"
+        }
+      },
+      "spec": {
+        "queue": "research"
+      },
+      "status": {}
+    }
+  ],
+  "bindRequests": [
+    {
+      "apiVersion": "scheduling.run.ai/v1alpha2",
+      "kind": "BindRequest",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-0",
+        "uid": "br-a00e1f2b",
+        "creationTimestamp": "2026-10-20T10:16:03Z",
+        "ownerReferences": [
+          {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "name": "train-llm-worker-0",
+            "uid": "a00e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a40"
+          }
+        ]
+      },
+      "spec": {
+        "podName": "train-llm-worker-0",
+        "selectedNode": "gpu-03"
+      },
+      "status": {
+        "phase": "Succeeded",
+        "failedAttempts": 0
+      }
+    },
+    {
+      "apiVersion": "scheduling.run.ai/v1alpha2",
+      "kind": "BindRequest",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-1",
+        "uid": "br-a10e1f2b",
+        "creationTimestamp": "2026-10-20T10:16:03Z",
+        "ownerReferences": [
+          {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "name": "train-llm-worker-1",
+            "uid": "a10e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a41"
+          }
+        ]
+      },
+      "spec": {
+        "podName": "train-llm-worker-1",
+        "selectedNode": "gpu-04"
+      },
+      "status": {
+        "phase": "Succeeded",
+        "failedAttempts": 0
+      }
+    },
+    {
+      "apiVersion": "scheduling.run.ai/v1alpha2",
+      "kind": "BindRequest",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-2",
+        "uid": "br-a20e1f2b",
+        "creationTimestamp": "2026-10-20T10:16:03Z",
+        "ownerReferences": [
+          {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "name": "train-llm-worker-2",
+            "uid": "a20e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a42"
+          }
+        ]
+      },
+      "spec": {
+        "podName": "train-llm-worker-2",
+        "selectedNode": "gpu-05"
+      },
+      "status": {
+        "phase": "Succeeded",
+        "failedAttempts": 0
+      }
+    },
+    {
+      "apiVersion": "scheduling.run.ai/v1alpha2",
+      "kind": "BindRequest",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-3",
+        "uid": "br-a30e1f2b",
+        "creationTimestamp": "2026-10-20T10:16:03Z",
+        "ownerReferences": [
+          {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "name": "train-llm-worker-3",
+            "uid": "a30e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a43"
+          }
+        ]
+      },
+      "spec": {
+        "podName": "train-llm-worker-3",
+        "selectedNode": "gpu-06"
+      },
+      "status": {
+        "phase": "Succeeded",
+        "failedAttempts": 1
+      }
+    }
+  ],
+  "events": [
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "pg-train-llm-7f3a19c2-5b0e-4d6a-9a41-2c8e0f7d1b33.unschedulable.091230",
+        "creationTimestamp": "2026-10-20T09:12:30Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "PodGroup",
+        "namespace": "team-a",
+        "name": "pg-train-llm-7f3a19c2-5b0e-4d6a-9a41-2c8e0f7d1b33",
+        "uid": "e1c2a9d4-0b77-4f3e-8c15-6a9d2b40e7f1"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Normal",
+      "count": 40,
+      "firstTimestamp": "2026-10-20T09:12:30Z",
+      "lastTimestamp": "2026-10-20T09:38:10Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8.unschedulable.100212",
+        "creationTimestamp": "2026-10-20T10:02:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "PodGroup",
+        "namespace": "team-a",
+        "name": "pg-train-llm-c91b4e2a-8f17-4c3d-b5a6-1d9e7a02f4c8",
+        "uid": "5d08f3b7-2e46-4a19-a0c3-9b71e8d25f64"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Normal",
+      "count": 212,
+      "firstTimestamp": "2026-10-20T10:02:12Z",
+      "lastTimestamp": "2026-10-20T10:16:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-0.unschedulable.100212",
+        "creationTimestamp": "2026-10-20T10:02:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-0",
+        "uid": "a00e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a40"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Warning",
+      "count": 212,
+      "firstTimestamp": "2026-10-20T10:02:12Z",
+      "lastTimestamp": "2026-10-20T10:16:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-1.unschedulable.100212",
+        "creationTimestamp": "2026-10-20T10:02:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-1",
+        "uid": "a10e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a41"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Warning",
+      "count": 212,
+      "firstTimestamp": "2026-10-20T10:02:12Z",
+      "lastTimestamp": "2026-10-20T10:16:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-2.unschedulable.100212",
+        "creationTimestamp": "2026-10-20T10:02:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-2",
+        "uid": "a20e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a42"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Warning",
+      "count": 212,
+      "firstTimestamp": "2026-10-20T10:02:12Z",
+      "lastTimestamp": "2026-10-20T10:16:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-3.unschedulable.100212",
+        "creationTimestamp": "2026-10-20T10:02:12Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-3",
+        "uid": "a30e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a43"
+      },
+      "reason": "Unschedulable",
+      "message": "Non-preemptible workload is over quota. Workload requested 4 GPUs, but research quota is 2 GPUs, while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.",
+      "type": "Warning",
+      "count": 212,
+      "firstTimestamp": "2026-10-20T10:02:12Z",
+      "lastTimestamp": "2026-10-20T10:16:02Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-3.failedbinding.101604",
+        "creationTimestamp": "2026-10-20T10:16:04Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-3",
+        "uid": "a30e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a43"
+      },
+      "reason": "FailedBinding",
+      "message": "Failed to bind pod team-a/train-llm-worker-3 to node gpu-06. container runtime network not ready",
+      "type": "Warning",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T10:16:04Z",
+      "lastTimestamp": "2026-10-20T10:16:04Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-0.bound.101605",
+        "creationTimestamp": "2026-10-20T10:16:05Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-0",
+        "uid": "a00e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a40"
+      },
+      "reason": "Bound",
+      "message": "Pod bound successfully to node gpu-03",
+      "type": "Normal",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T10:16:05Z",
+      "lastTimestamp": "2026-10-20T10:16:05Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-1.bound.101605",
+        "creationTimestamp": "2026-10-20T10:16:05Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-1",
+        "uid": "a10e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a41"
+      },
+      "reason": "Bound",
+      "message": "Pod bound successfully to node gpu-04",
+      "type": "Normal",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T10:16:05Z",
+      "lastTimestamp": "2026-10-20T10:16:05Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-2.bound.101605",
+        "creationTimestamp": "2026-10-20T10:16:05Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-2",
+        "uid": "a20e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a42"
+      },
+      "reason": "Bound",
+      "message": "Pod bound successfully to node gpu-05",
+      "type": "Normal",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T10:16:05Z",
+      "lastTimestamp": "2026-10-20T10:16:05Z"
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Event",
+      "metadata": {
+        "namespace": "team-a",
+        "name": "train-llm-worker-3.bound.101609",
+        "creationTimestamp": "2026-10-20T10:16:09Z",
+        "annotations": {}
+      },
+      "involvedObject": {
+        "kind": "Pod",
+        "namespace": "team-a",
+        "name": "train-llm-worker-3",
+        "uid": "a30e1f2b3-4c5d-4e6f-8a7b-9c0d1e2f3a43"
+      },
+      "reason": "Bound",
+      "message": "Pod bound successfully to node gpu-06",
+      "type": "Normal",
+      "count": 1,
+      "firstTimestamp": "2026-10-20T10:16:09Z",
+      "lastTimestamp": "2026-10-20T10:16:09Z"
+    }
+  ]
+}

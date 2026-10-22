@@ -119,6 +119,22 @@ func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *htt
 	}
 }
 
+// WriteZippedSnapshot writes the same zip the /get-snapshot endpoint serves, for a session held
+// directly rather than over HTTP. cmd/snapshot-tool uses it to capture the state between replayed
+// scheduling cycles.
+func WriteZippedSnapshot(ctx context.Context, writer io.Writer, session *framework.Session) error {
+	zipWriter := zip.NewWriter(writer)
+	jsonWriter, err := zipWriter.Create(SnapshotFileName)
+	if err != nil {
+		return err
+	}
+	plugin := &snapshotPlugin{session: session, config: session.Config}
+	if err := plugin.writeSnapshot(ctx, jsonWriter); err != nil {
+		return err
+	}
+	return zipWriter.Close()
+}
+
 func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) error {
 	stream := newJSONStream(writer)
 
