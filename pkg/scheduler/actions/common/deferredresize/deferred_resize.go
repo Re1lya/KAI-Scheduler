@@ -75,13 +75,8 @@ func AttemptForJob(
 	}
 	for _, task := range deferredTasks(ssn, job) {
 		metrics.IncPodgroupsConsideredByAction()
-		succeeded, victims, result := attempt(ssn, job, ssn.ClusterInfo.Nodes[task.NodeName], task, actionType, solve)
+		succeeded, result := attempt(ssn, job, ssn.ClusterInfo.Nodes[task.NodeName], task, actionType, solve)
 		if succeeded {
-			if len(victims) > 0 {
-				metrics.IncPodgroupScheduledByAction()
-				log.InfraLogger.V(3).Infof("Evicted <%v> for deferred resize of <%s/%s> on node <%s>",
-					taskNames(victims), task.Namespace, task.Name, task.NodeName)
-			}
 			continue
 		}
 		if shouldStopForResult(result) {
@@ -111,13 +106,13 @@ func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*p
 // shortfall is covered. It also matters for correctness: with several tasks, the solver re-picks
 // them by the job's gang rule and may place only some, but one task is the only one it can pick.
 // The job's own attempts never evict its own pods and discard their statements, so the task stays
-// current across the job's attempts. succeeded is true with no victims when the node already has room.
+// current across the job's attempts. succeeded is true without evictions when the node already has room.
 func attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, actionType framework.ActionType, solve Solve,
-) (succeeded bool, victims []*pod_info.PodInfo, result *solvers.SearchResult) {
+) (succeeded bool, result *solvers.SearchResult) {
 	if nodeFitsAfterReleasing(node) {
-		return true, nil, nil
+		return true, nil
 	}
 
 	self := ssn.Statement()
@@ -125,20 +120,20 @@ func attempt(
 	if err := self.Evict(task, "", eviction_info.EvictionMetadata{}); err != nil {
 		log.InfraLogger.Errorf("Failed to virtually evict deferred resize task <%s/%s>: %v",
 			task.Namespace, task.Name, err)
-		return false, nil, nil
+		return false, nil
 	}
 
 	stmt, result := solve(job, node, task)
 	if stmt == nil {
-		return false, nil, result
+		return false, result
 	}
 	// JobSolver reports unsolved here since a Releasing task already counts as active.
 	solved := result.Reason() == solvers.SearchResultSolved
-	victims = stmt.EvictedTasks()
+	victims := stmt.EvictedTasks()
 	stmt.Discard()
 	self.Discard()
 	if !solved || len(victims) == 0 {
-		return false, nil, result
+		return false, result
 	}
 
 	final := ssn.Statement()
@@ -146,12 +141,15 @@ func attempt(
 		log.InfraLogger.Errorf("Failed to evict victims for deferred resize of <%s/%s>: %v",
 			task.Namespace, task.Name, err)
 		final.Discard()
-		return false, nil, result
+		return false, result
 	}
 	if err := final.Commit(); err != nil {
 		log.InfraLogger.Errorf("Failed to commit %s statement for deferred resize: %v", actionType, err)
 	}
-	return true, victims, result
+	metrics.IncPodgroupScheduledByAction()
+	log.InfraLogger.V(3).Infof("Evicted <%v> for deferred resize of <%s/%s> on node <%s>",
+		taskNames(victims), task.Namespace, task.Name, node.Name)
+	return true, result
 }
 
 // isGangSecured reports whether the job meets its gang minimum with allocated pods. A job that

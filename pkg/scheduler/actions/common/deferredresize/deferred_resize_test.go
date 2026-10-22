@@ -292,13 +292,11 @@ func TestAttempt_EvictsOnlyVictimsAndRestoresResizer(t *testing.T) {
 	resizer := nodeTasks["node0"][0]
 	before := snapshot(ssn)
 
-	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+	succeeded, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	require.True(t, succeeded)
 	require.Equal(t, solvers.SearchResultSolved, result.Reason())
-	require.Len(t, victims, 1)
-	assert.Equal(t, "victim-0", victims[0].Name)
 
 	after := snapshot(ssn)
 	assert.Equal(t, before.jobTasks[resizer.UID], after.jobTasks[resizer.UID], "resizer restored in job")
@@ -317,11 +315,10 @@ func TestAttempt_NodeAlreadyFits(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+	succeeded, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, failIfSolverRuns(t))
 
 	assert.True(t, succeeded)
-	assert.Empty(t, victims)
 	assert.Nil(t, result)
 	requireUnchanged(t, before, ssn)
 }
@@ -331,12 +328,13 @@ func TestAttempt_FitsWhileEarlierVictimsTerminate(t *testing.T) {
 	topology.Jobs[1].Tasks[0].State = pod_status.Releasing
 	ssn := buildSession(t, topology)
 	job, nodeTasks := resizerTasks(ssn)
+	before := snapshot(ssn)
 
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
-		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
+	succeeded, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+		nodeTasks["node0"][0], framework.Preempt, failIfSolverRuns(t))
 
 	assert.True(t, succeeded)
-	assert.Empty(t, victims)
+	requireUnchanged(t, before, ssn)
 }
 
 func TestAttempt_NoSolutionFromSolveRestoresSession(t *testing.T) {
@@ -351,11 +349,10 @@ func TestAttempt_NoSolutionFromSolveRestoresSession(t *testing.T) {
 		solveSawReleasing = task.Status == pod_status.Releasing && task.IsVirtualStatus
 		return nil, nil
 	}
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+	succeeded, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, declining)
 
 	assert.False(t, succeeded)
-	assert.Empty(t, victims)
 	assert.True(t, solveSawReleasing, "solve must run with the resizer virtually evicted")
 	requireUnchanged(t, before, ssn)
 }
@@ -367,11 +364,10 @@ func TestAttempt_NoSolutionRestoresSession(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	succeeded, victims, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+	succeeded, result := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	assert.False(t, succeeded)
-	assert.Empty(t, victims)
 	assert.NotEqual(t, solvers.SearchResultSolved, result.Reason())
 	requireUnchanged(t, before, ssn)
 }
@@ -383,11 +379,10 @@ func TestAttempt_InsufficientVictimsRestoresSession(t *testing.T) {
 	job, nodeTasks := resizerTasks(ssn)
 	before := snapshot(ssn)
 
-	succeeded, victims, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+	succeeded, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 
 	assert.False(t, succeeded)
-	assert.Empty(t, victims)
 	requireUnchanged(t, before, ssn)
 }
 
@@ -456,7 +451,7 @@ func TestAttempt_RepeatedFailuresKeepSessionStable(t *testing.T) {
 	before := snapshot(ssn)
 
 	for range 5 {
-		succeeded, _, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
+		succeeded, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 			nodeTasks["node0"][0], framework.Preempt, preemptSolve(ssn))
 		require.False(t, succeeded)
 	}
