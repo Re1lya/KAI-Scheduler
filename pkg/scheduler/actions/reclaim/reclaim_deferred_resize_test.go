@@ -281,13 +281,16 @@ func TestReclaimForDeferredResizeIgnoresPendingDemandInVictimFilter(t *testing.T
 				// node1 raises queue1's fair share to its full request, so only its deserved quota is exceeded.
 				Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}, "node1": {CPUMillis: 4}},
 				Queues: []test_utils.TestQueueBasic{cpuQueue("queue0", 3000), cpuQueue("queue1", 1000)},
+				// The victim leaves node0; node1 has room, so it is moved there.
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
-					"victim": {NodeName: "node0", Status: pod_status.Releasing},
+					"victim": {NodeName: "node1", Status: pod_status.Pipelined},
 				},
 				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					resizingName: {NodeName: "node0", Status: pod_status.Running},
 				},
-				Mocks:                    &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfCacheEvictions: 1}},
+				Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+					NumberOfCacheEvictions: 1, NumberOfPipelineActions: 1,
+				}},
 				DeferredResizePreemption: true,
 			}
 			ssn := test_utils.BuildSession(topology, controller)

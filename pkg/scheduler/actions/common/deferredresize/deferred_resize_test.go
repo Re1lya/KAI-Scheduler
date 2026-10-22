@@ -287,7 +287,10 @@ func TestHasActiveAllocatedTaskOnNode(t *testing.T) {
 }
 
 func TestAttempt_EvictsOnlyVictimsAndRestoresResizer(t *testing.T) {
-	ssn := buildSession(t, baseTopology())
+	topology := baseTopology()
+	// No other node to move the victim to, so it is evicted.
+	delete(topology.Nodes, "node1")
+	ssn := buildSession(t, topology)
 	job, nodeTasks := resizerTasks(ssn)
 	resizer := nodeTasks["node0"][0]
 	before := snapshot(ssn)
