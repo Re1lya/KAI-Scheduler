@@ -102,6 +102,10 @@ type TestResourceClaim struct {
 	Count int64 `json:"count,omitempty" protobuf:"bytes,5,opt,name=count"`
 
 	ClaimStatus *resourceapi.ResourceClaimStatus `json:"claimStatus,omitempty" protobuf:"bytes,7,opt,name=claimStatus"`
+
+	Finalizers []string
+	// OwnerPodName makes the claim one generated for that pod, whose fake UID is its name.
+	OwnerPodName string
 }
 
 func RandomReservedForReferences(numReferences int) []resourceapi.ResourceClaimConsumerReference {
@@ -143,5 +147,11 @@ func (c *TestResourceClaim) WithAllocation(nodeName, device, podName string) *Te
 			{Resource: "pods", Name: podName, UID: types.UID(podName)},
 		},
 	}
+	return c
+}
+
+// GeneratedFor marks the claim as generated from a template for the pod, which owns it.
+func (c *TestResourceClaim) GeneratedFor(podName string) *TestResourceClaim {
+	c.OwnerPodName = podName
 	return c
 }

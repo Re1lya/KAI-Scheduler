@@ -4,7 +4,10 @@
 package dynamicresources
 
 import (
+	"slices"
+
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/dynamic-resource-allocation/structured"
 	"k8s.io/utils/ptr"
@@ -32,7 +35,8 @@ func newReleasingDevices(
 		return r
 	}
 	for _, claim := range claims {
-		if claim.Status.Allocation == nil || !isReservedOnlyFor(claim, releasingPods) {
+		if claim.Status.Allocation == nil || !isReservedOnlyFor(claim, releasingPods) ||
+			!isFreedWithConsumers(claim, releasingPods) {
 			continue
 		}
 		// Shared (consumable capacity) allocations stay allocated: pipelining onto them is not supported.
@@ -44,6 +48,17 @@ func newReleasingDevices(
 		}
 	}
 	return r
+}
+
+// isFreedWithConsumers reports whether the claim's devices are freed once its consumers exit. The
+// claim controller deallocates claims carrying its finalizer, and deletes claims generated for a
+// pod together with the pod. Other claims stay allocated after their last consumer leaves.
+func isFreedWithConsumers(claim *resourceapi.ResourceClaim, releasingPods *framework.ReleasingPods) bool {
+	if slices.Contains(claim.Finalizers, resourceapi.Finalizer) {
+		return true
+	}
+	owner := metav1.GetControllerOf(claim)
+	return owner != nil && owner.APIVersion == "v1" && owner.Kind == "Pod" && releasingPods.Has(owner.UID)
 }
 
 func isReservedOnlyFor(claim *resourceapi.ResourceClaim, releasingPods *framework.ReleasingPods) bool {

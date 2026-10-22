@@ -440,6 +440,16 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 		if resourceClaim.ClaimStatus != nil {
 			resourceClaimObject.Status = *resourceClaim.ClaimStatus
 		}
+		resourceClaimObject.Finalizers = resourceClaim.Finalizers
+		if resourceClaim.OwnerPodName != "" {
+			resourceClaimObject.OwnerReferences = []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Name:       resourceClaim.OwnerPodName,
+				UID:        types.UID(resourceClaim.OwnerPodName),
+				Controller: ptr.To(true),
+			}}
+		}
 		objects = append(objects, &resourceClaimObject)
 	}
 	return objects

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
+	resourceapi "k8s.io/api/resource/v1"
 
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
@@ -39,7 +40,44 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
 			},
 			TestDRAObjects: draObjects(1,
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0").GeneratedFor("holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
+			),
+			Nodes:  draNodes(),
+			Queues: draQueues(),
+			Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1}},
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"holder_job0":  {Status: pod_status.Releasing, NodeName: "node0"},
+				"pending_job0": {Status: pod_status.Pipelined, NodeName: "node0"},
+			},
+		},
+		{
+			// The claim controller only deallocates claims carrying its finalizer.
+			Name: "Only device held by a releasing pod's standalone claim: stay pending",
+			Jobs: []*jobs_fake.TestJobBasic{
+				draJob("holder_job0", pod_status.Releasing, "node0", "holder-claim"),
+				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
+			},
+			TestDRAObjects: draObjects(1,
 				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
+			),
+			Nodes:  draNodes(),
+			Queues: draQueues(),
+			Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"holder_job0":  {Status: pod_status.Releasing, NodeName: "node0"},
+				"pending_job0": {Status: pod_status.Pending},
+			},
+		},
+		{
+			Name: "Only device held by a releasing pod's standalone claim with the deallocation finalizer: pipeline onto it",
+			Jobs: []*jobs_fake.TestJobBasic{
+				draJob("holder_job0", pod_status.Releasing, "node0", "holder-claim"),
+				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
+			},
+			TestDRAObjects: draObjects(1,
+				withFinalizer(dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0")),
 				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
@@ -57,7 +95,7 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim-0", "pending-claim-1"),
 			},
 			TestDRAObjects: draObjects(2,
-				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0").GeneratedFor("holder_job0-0"),
 				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue0"),
 				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue0"),
 			),
@@ -76,7 +114,7 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim-0", "pending-claim-1"),
 			},
 			TestDRAObjects: draObjects(1,
-				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0").GeneratedFor("holder_job0-0"),
 				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue0"),
 				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue0"),
 			),
@@ -96,7 +134,7 @@ func TestAllocateDRAWithDevicesOfReleasingPods(t *testing.T) {
 				draJob("pending_job0", pod_status.Pending, "", "pending-claim"),
 			},
 			TestDRAObjects: draObjects(1,
-				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0"),
+				dra_fake.NewTestResourceClaim("holder-claim", "test", "queue0").WithAllocation("node0", "0", "holder_job0-0").GeneratedFor("holder_job0-0"),
 				dra_fake.NewTestResourceClaim("pending-claim", "test", "queue0"),
 			),
 			Nodes:  draNodes(),
@@ -142,6 +180,11 @@ func draObjects(devices int, claims ...*dra_fake.TestResourceClaim) dra_fake.Tes
 		},
 		ResourceClaims: claims,
 	}
+}
+
+func withFinalizer(claim *dra_fake.TestResourceClaim) *dra_fake.TestResourceClaim {
+	claim.Finalizers = []string{resourceapi.Finalizer}
+	return claim
 }
 
 func draNodes() map[string]nodes_fake.TestNodeBasic {

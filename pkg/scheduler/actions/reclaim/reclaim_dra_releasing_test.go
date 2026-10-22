@@ -61,7 +61,7 @@ func TestReclaimDRAWithDevicesOfReleasingVictims(t *testing.T) {
 				{Name: "node0-gpu", DeviceClassName: "nvidia.com/gpu", NodeName: "node0", Count: 2},
 			},
 			ResourceClaims: []*dra_fake.TestResourceClaim{
-				dra_fake.NewTestResourceClaim("releasing-claim", "test", "queue0").WithAllocation("node0", "0", "releasing_job0-0"),
+				dra_fake.NewTestResourceClaim("releasing-claim", "test", "queue0").WithAllocation("node0", "0", "releasing_job0-0").GeneratedFor("releasing_job0-0"),
 				dra_fake.NewTestResourceClaim("running-claim", "test", "queue0").WithAllocation("node0", "1", "running_job0-0"),
 				dra_fake.NewTestResourceClaim("pending-claim-0", "test", "queue1"),
 				dra_fake.NewTestResourceClaim("pending-claim-1", "test", "queue1"),
