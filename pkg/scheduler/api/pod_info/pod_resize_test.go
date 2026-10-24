@@ -59,6 +59,15 @@ func TestIsDeferredResizeTask(t *testing.T) {
 			want: false,
 		},
 		{
+			name: "NUMA-placed task",
+			task: func() *PodInfo {
+				task := resizeTask(pod_status.Running, "2", "1", "1", deferred)
+				task.NUMAPlacement = NUMAPlacement{Zones: []ZonePlacement{{ZoneIndex: 0, Amount: newResourceList("1", "1Gi")}}}
+				return task
+			}(),
+			want: false,
+		},
+		{
 			name: "releasing task",
 			task: resizeTask(pod_status.Releasing, "2", "1", "1", deferred),
 			want: false,

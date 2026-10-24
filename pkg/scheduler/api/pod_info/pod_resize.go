@@ -14,9 +14,11 @@ var resizableResources = []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory}
 
 // IsDeferredResizeTask reports whether a running task has a kubelet-Deferred in-place resize
 // that still asks for more cpu or memory than the kubelet has allocated or enacted. Any other
-// status means the session is evicting, moving or still starting the pod.
+// status means the session is evicting, moving or still starting the pod. A NUMA-placed task is
+// excluded: which zones the kubelet grows it into cannot be predicted, so evictions could free
+// room in the wrong zone.
 func IsDeferredResizeTask(task *PodInfo) bool {
-	if task == nil || task.Pod == nil || task.Status != pod_status.Running {
+	if task == nil || task.Pod == nil || task.Status != pod_status.Running || !task.NUMAPlacement.IsEmpty() {
 		return false
 	}
 	pod := task.Pod
