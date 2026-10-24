@@ -13,6 +13,7 @@ import (
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	"k8s.io/dynamic-resource-allocation/resourceclaim"
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
@@ -153,6 +154,11 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 	}
 
 	if claimObject.Status.Allocation != nil {
+		// A consumer whose bind is in flight is not in ReservedFor yet, so the claim may look held
+		// only by releasing pods. Bound pods keep their BindRequest and are already in ReservedFor.
+		if !resourceclaim.IsReservedForPod(pod, claimObject) {
+			drap.releasingDevices.hold(claimObject.Status.Allocation)
+		}
 		return nil // Claim is already allocated, no need to assume
 	}
 
