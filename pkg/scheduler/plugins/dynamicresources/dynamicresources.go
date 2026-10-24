@@ -296,6 +296,9 @@ func (drap *draPlugin) filter(
 		return nil
 	}
 
+	if mode == api.PipelinePredicate {
+		defer drap.holdAllocatedClaims(pod)()
+	}
 	results, err := drap.allocate(nodeInfo.Node, claimsToAllocate, mode)
 	if err != nil {
 		return fmt.Errorf("cannot allocate DRA claims on node %s: %v", nodeInfo.Name, err)
@@ -351,6 +354,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		mode := api.StrictPredicate
 		if event.Task.Status == pod_status.Pipelined {
 			mode = api.PipelinePredicate
+			defer drap.holdAllocatedClaims(pod)()
 		}
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
@@ -431,6 +435,29 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 }
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
+
+// holdAllocatedClaims holds the releasing devices of the pod's already allocated claims, so that a
+// pipeline allocation does not give them to the pod's other claims. The returned func releases them.
+func (drap *draPlugin) holdAllocatedClaims(pod *v1.Pod) func() {
+	var held []*resourceapi.AllocationResult
+	for _, podClaim := range pod.Spec.ResourceClaims {
+		claimName, err := resources.GetResourceClaimName(pod, &podClaim)
+		if err != nil {
+			continue
+		}
+		claim, err := drap.manager.ResourceClaims().Get(pod.Namespace, claimName)
+		if err != nil || claim.Status.Allocation == nil {
+			continue
+		}
+		drap.releasingDevices.hold(claim.Status.Allocation)
+		held = append(held, claim.Status.Allocation)
+	}
+	return func() {
+		for _, allocation := range held {
+			drap.releasingDevices.release(allocation)
+		}
+	}
+}
 
 func (drap *draPlugin) allocate(
 	node *v1.Node, claims []*resourceapi.ResourceClaim, mode api.PredicateMode,
