@@ -18,10 +18,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// Solve must take victims from node only. A nil statement means no solution.
 type Solve func(job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) (*framework.Statement, *solvers.SearchResult)
 
-// NonPendingJobFilter is nil when the feature is disabled.
 func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInfo) bool {
 	if !ssn.DeferredResizePreemptionEnabled() {
 		return nil
@@ -45,7 +43,6 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 	return false
 }
 
-// AttemptForJob returns whether the action should stop.
 func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo,
 	actionType framework.ActionType, solve Solve, shouldStopForResult func(*solvers.SearchResult) bool,

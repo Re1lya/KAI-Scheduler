@@ -562,7 +562,6 @@ func (ssn *Session) DeferredResizePreemptionEnabled() bool {
 	return ssn.SchedulerParams.DeferredResizePreemption
 }
 
-// OverrideDeferredResizePreemption overrides the value returned by DeferredResizePreemptionEnabled. Use for testing purposes.
 func (ssn *Session) OverrideDeferredResizePreemption(enabled bool) {
 	ssn.SchedulerParams.DeferredResizePreemption = enabled
 }
