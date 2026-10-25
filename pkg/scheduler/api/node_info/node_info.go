@@ -193,6 +193,10 @@ func (ni *NodeInfo) IsTaskAllocatableOnReleasingOrIdle(task *pod_info.PodInfo) b
 		return false
 	}
 
+	// An in-place resize keeps its volumes.
+	if task.IsInPlaceResize {
+		return true
+	}
 	if allocatable, err := ni.isTaskStorageAllocatableOnReleasingOrIdle(task); !allocatable {
 		log.InfraLogger.V(7).Do(func() {
 			log.InfraLogger.Infof("Task storage %s/%s is not allocatable on node %s, error: %v",

@@ -41,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 	commonconstants "github.com/kai-scheduler/api/constants"
 	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	"github.com/kai-scheduler/api/utilities/resources"
@@ -854,6 +855,28 @@ func TestIsTaskAllocatableOnReleasingOrIdle(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestIsTaskAllocatableOnReleasingOrIdleSkipsStorageForInPlaceResize(t *testing.T) {
+	node := common_info.BuildNode("n1", common_info.BuildResourceList("2000m", "2G"))
+	vectorMap := testVectorMapFromNode(node)
+	ni := NewNodeInfo(node, pod_affinity.NewMockNodePodAffinityInfo(NewController(t)), vectorMap)
+	pod := common_info.BuildPod("resizer", "ns", "n1", v1.PodRunning, common_info.BuildResourceList("1000m", "1G"),
+		[]metav1.OwnerReference{}, map[string]string{}, map[string]string{})
+	addJobAnnotation(pod)
+	task := pod_info.NewTaskInfo(pod, vectorMap)
+	size := resource.MustParse("1Gi")
+	task.UpsertStorageClaim(&storageclaim_info.StorageClaimInfo{
+		Key: storageclaim_info.NewKey("ns", "scratch"), Name: "scratch", Namespace: "ns", Size: &size,
+		Phase: v1.ClaimBound, StorageClass: "no-capacity-info",
+		PodOwnerReference: &storageclaim_info.PodOwnerReference{PodID: task.UID, PodName: "resizer", PodNamespace: "ns"},
+	})
+	task.Status = pod_status.Releasing
+	task.IsVirtualStatus = true
+
+	assert.False(t, ni.IsTaskAllocatableOnReleasingOrIdle(task), "a virtually evicted pod's owned claims count as new")
+	task.IsInPlaceResize = true
+	assert.True(t, ni.IsTaskAllocatableOnReleasingOrIdle(task), "an in-place resize keeps its volumes")
 }
 
 func runAllocatableTest(
