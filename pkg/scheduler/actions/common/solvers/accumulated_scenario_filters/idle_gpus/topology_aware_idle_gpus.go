@@ -46,6 +46,10 @@ func NewTopologyAwareIdleGpusFilter(
 	scenario *scenario.ByNodeScenario,
 	nodeInfosMap map[string]*node_info.NodeInfo,
 ) *TopologyAwareIdleGpus {
+	// A resize stand-in adds no GPUs, but the subgroup sum would count its running siblings.
+	if scenario != nil && len(scenario.PendingTasks()) > 0 && scenario.PendingTasks()[0].IsInPlaceResize {
+		return nil
+	}
 	subgroupsWithRequired := extractRequiredTopologyConstraints(scenario)
 	if len(subgroupsWithRequired) == 0 {
 		return nil

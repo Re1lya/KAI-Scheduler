@@ -58,7 +58,7 @@ no extra demand.
 | Deferred pod enters the scheduling queue | Deferred job enters the preempt/reclaim job queues |
 | Fit for a pod on its own node uses `max(0, request - cached)` | The stand-in requests zero; the fit check is "node not over-committed" |
 | Standard preemption dry run removes victims on that node | Regular `JobSolver` with victims from that node |
-| Start-time checks skipped per plugin (`IsPodResizeDeferred`) | Skipped by returning before predicates, node subsetting and NUMA in `AllocateJob`, plus the node-affinity scenario filter |
+| Start-time checks skipped per plugin (`IsPodResizeDeferred`) | Skipped by returning before predicates, node subsetting and NUMA in `AllocateJob`, plus the node-affinity and topology GPU scenario filters |
 | No binding; Permit waits for kubelet actuation | Nothing is bound or pipelined; only victims are committed |
 | No queue quota in kube-scheduler | Reclaim keeps fair-share admission (`CanReclaimResources`, reclaim validator). Queue limits and non-preemptible quota for the resize are enforced when the resize is admitted (pod resize webhook) |
 | Node opt-out `disableResizePreemption` | Not supported yet |
