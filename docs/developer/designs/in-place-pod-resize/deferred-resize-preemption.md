@@ -108,8 +108,8 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   only matter when a pod starts are skipped: node health (cordon, not ready,
   pressure), Kubernetes pre-filters and filters (node affinity, taints, pod
   affinity, host ports, volumes, ConfigMaps), KAI's CSI storage capacity
-  check, the solver's node-affinity scenario filter and KAI's CPU/GPU
-  node-label rule. Capacity, resource type,
+  check, KAI's topology constraints, the solver's node-affinity and topology
+  scenario filters and KAI's CPU/GPU node-label rule. Capacity, resource type,
   GPU and resource claim checks still apply; unlike KEP-5836, a pod whose
   claim was deleted gets no evictions. On a node that is not ready the
   evictions may not help, since the kubelet may not apply the resize.
