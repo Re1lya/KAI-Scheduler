@@ -35,6 +35,10 @@ func (t *topologyPlugin) subSetNodesFn(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, _ map[string]*subgroup_info.PodSet,
 	tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet,
 ) ([]node_info.NodeSet, error) {
+	// An in-place resize stays on its node.
+	if pod_info.AllInPlaceResize(tasks) {
+		return []node_info.NodeSet{nodeSet}, nil
+	}
 	topologyTree, found := t.getJobTopology(subGroup)
 	if !found {
 		job.AddSimpleJobFitError(

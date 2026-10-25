@@ -18,7 +18,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
@@ -27,6 +29,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	apiconstants "github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
@@ -669,6 +672,47 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 				"resizer": pod_status.Running,
 				"victim":  pod_status.Releasing,
 			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "resizing job whose Topology was deleted evicts",
+			Jobs: []*jobs_fake.TestJobBasic{
+				resizerWith(func(job *jobs_fake.TestJobBasic) {
+					job.RootSubGroupSet = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+						&topology_info.TopologyConstraintInfo{Topology: "deleted", RequiredLevel: "rack"})
+				}),
+				victim(),
+			},
+			Nodes:  cpuNodes("node0"),
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "GPU resizing pod on a node that lost its topology label evicts",
+			Jobs: []*jobs_fake.TestJobBasic{
+				resizerWith(func(job *jobs_fake.TestJobBasic) {
+					job.RequiredGPUsPerTask = 1
+					job.RootSubGroupSet = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+						&topology_info.TopologyConstraintInfo{Topology: "cluster-topology", RequiredLevel: "rack"})
+				}),
+				victim(),
+			},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, GPUs: 1}},
+			Queues: []test_utils.TestQueueBasic{{Name: "queue0", DeservedGPUs: 1}},
+			Topologies: []*kaiv1alpha1.Topology{{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster-topology"},
+				Spec:       kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "rack"}}},
+			}},
+			JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+				"resizer": {NodeName: "node0", Status: pod_status.Running, GPUsRequired: 1},
+				"victim":  {NodeName: "node0", Status: pod_status.Releasing},
+			},
 			Mocks:                    evictionMocks(1),
 			DeferredResizePreemption: true,
 		},

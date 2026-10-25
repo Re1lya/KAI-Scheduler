@@ -46,6 +46,9 @@ func NewTopologyAwareIdleGpusFilter(
 	scenario *scenario.ByNodeScenario,
 	nodeInfosMap map[string]*node_info.NodeInfo,
 ) *TopologyAwareIdleGpus {
+	if scenario != nil && pod_info.AllInPlaceResize(scenario.PendingTasks()) {
+		return nil
+	}
 	subgroupsWithRequired := extractRequiredTopologyConstraints(scenario)
 	if len(subgroupsWithRequired) == 0 {
 		return nil

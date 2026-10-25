@@ -886,3 +886,10 @@ func TestCloneKeepsInPlaceResizeMark(t *testing.T) {
 	task := &PodInfo{IsInPlaceResize: true}
 	assert.Equal(t, true, task.Clone().IsInPlaceResize)
 }
+
+func TestAllInPlaceResize(t *testing.T) {
+	resize, other := &PodInfo{IsInPlaceResize: true}, &PodInfo{}
+	assert.Equal(t, true, AllInPlaceResize([]*PodInfo{resize}))
+	assert.Equal(t, false, AllInPlaceResize([]*PodInfo{resize, other}))
+	assert.Equal(t, false, AllInPlaceResize(nil))
+}

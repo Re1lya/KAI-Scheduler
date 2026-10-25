@@ -280,6 +280,16 @@ func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
 	// AcceptedResourceVector stays as-is since it's set by setAcceptedResources
 }
 
+// AllInPlaceResize reports whether tasks is non-empty and every task is an in-place resize.
+func AllInPlaceResize(tasks []*PodInfo) bool {
+	for _, task := range tasks {
+		if !task.IsInPlaceResize {
+			return false
+		}
+	}
+	return len(tasks) > 0
+}
+
 func (pi *PodInfo) Clone() *PodInfo {
 	var resReqVectorClone resource_info.ResourceVector
 	if pi.ResReqVector != nil {
