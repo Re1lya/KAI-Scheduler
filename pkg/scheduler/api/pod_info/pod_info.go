@@ -104,6 +104,8 @@ type PodInfo struct {
 	Status          pod_status.PodStatus
 	IsVirtualStatus bool
 	IsLegacyMIGtask bool
+	// IsInPlaceResize marks a stand-in for a running pod's deferred resize; it is never placed.
+	IsInPlaceResize bool
 
 	BindRequest *bindrequest_info.BindRequestInfo
 
@@ -307,6 +309,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
 		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		IsInPlaceResize:        pi.IsInPlaceResize,
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}

@@ -86,6 +86,37 @@ spec:
 | `validateQuota` | `true` | Master switch. When `false`, the webhook admits all resizes without any checks, and `blockUpsizeOnBoundedQueues` is ignored. |
 | `blockUpsizeOnBoundedQueues` | `false` | Strict mode: reject **any** upsize on a queue (or ancestor) that has a finite CPU or memory limit — regardless of free headroom — and, for non-preemptible workloads, on any queue with a finite quota. Closes the concurrent-resize race at the cost of disallowing upsizes on bounded queues entirely. |
 
+## Deferred resize preemption (opt-in)
+
+When a node has no room for an upsize, the kubelet marks the resize `Deferred` (pod condition `PodResizePending`, reason `Deferred`) and retries it later. By default KAI does not free room for it, so the pod can stay at its old size indefinitely.
+
+With the scheduler flag `deferred-resize-preemption` enabled, the `preempt` and `reclaim` actions treat a deferred upsize like a pending pod that must fit on its own node:
+
+- **Preempt** evicts lower-priority, preemptible pods of the same queue.
+- **Reclaim** evicts pods of other queues that are over their fair share, as long as the resizing pod's queue stays within its own fair share.
+
+The usual rules apply: priority, preemptibility, min-runtime protection and, for reclaim, fair share. KAI already charges the desired size, so queue limits and quota for the resize are checked by the webhook above when the resize is admitted. Only pods on the resizing pod's node are considered as victims (plus the rest of a gang that has a pod there). The resizing pod itself is never evicted. Once the victims are gone, the kubelet enacts the resize on its next retry.
+
+Enable it on the scheduling shard:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+spec:
+  args:
+    deferred-resize-preemption: "true"
+```
+
+Behavior to know:
+
+- Victims are only searched on the resizing pod's node, since an in-place resize cannot move the pod.
+- Only CPU and memory room on the node is checked for the resizing pod, as in KEP-5836: node affinity, taints, pod affinity, host ports, volumes (including CSI storage capacity), ConfigMaps, resource claims, NUMA zones and the job's topology constraints are not re-checked, and node health is not checked: a cordoned, not-ready or pressured node still gets evictions, even though the kubelet may not apply the resize there.
+- A job's pending pods are placed first. Its deferred resizes are handled afterwards, whether or not the pending pods were placed, but only once the job has enough allocated pods to meet its gang minimum.
+- Other deferred pods on the same node stay charged at their desired size during the search, which is conservative.
+- GPU resources are never part of a resize.
+
 ## Interaction with queue limits
 
 `limit: -1` on a queue resource means unbounded; any other value (including `0`) is a hard bound enforced on resize. The same convention applies to `quota` for non-preemptible workloads. See [Queues](../queues/README.md) for how limits and quota are configured.
