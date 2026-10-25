@@ -349,14 +349,15 @@ func TestAttempt_NoSolutionFromSolveRestoresSession(t *testing.T) {
 	declining := func(
 		_ *podgroup_info.PodGroupInfo, _ *node_info.NodeInfo, task *pod_info.PodInfo,
 	) (*framework.Statement, *solvers.SearchResult) {
-		solveSawReleasing = task.Status == pod_status.Releasing && task.IsVirtualStatus
+		solveSawReleasing = task.Status == pod_status.Releasing && task.IsVirtualStatus && task.IsInPlaceResize
 		return nil, nil
 	}
 	succeeded, _ := deferredresize.Attempt(ssn, job, ssn.ClusterInfo.Nodes["node0"],
 		nodeTasks["node0"][0], framework.Preempt, declining)
 
 	assert.False(t, succeeded)
-	assert.True(t, solveSawReleasing, "solve must run with the resizer virtually evicted")
+	assert.True(t, solveSawReleasing, "solve must run with the resizer virtually evicted and marked as in-place")
+	assert.False(t, nodeTasks["node0"][0].IsInPlaceResize, "the in-place mark is cleared after the attempt")
 	requireUnchanged(t, before, ssn)
 }
 

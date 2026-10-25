@@ -112,7 +112,7 @@ spec:
 Behavior to know:
 
 - Victims are only searched on the resizing pod's node, since an in-place resize cannot move the pod.
-- The resizing pod must still pass scheduling checks on its node (node readiness, cordon, taints, node affinity, pod affinity, host ports, queue limits). If the node no longer qualifies, for example it is cordoned or its labels changed, KAI evicts nothing.
+- Only resource fit is checked for the resizing pod, as in KEP-5836: node affinity, taints, pod affinity, host ports, volumes, ConfigMaps and resource claims are not re-checked, and a cordoned node still gets evictions. A node that is not ready or under memory, disk or PID pressure gets no evictions. Queue limits still apply.
 - A job's pending pods are placed first. Its deferred resizes are handled afterwards, whether or not the pending pods were placed, but only once the job has enough allocated pods to meet its gang minimum.
 - Other deferred pods on the same node stay charged at their desired size during the search, which is conservative.
 - GPU resources are never part of a resize.

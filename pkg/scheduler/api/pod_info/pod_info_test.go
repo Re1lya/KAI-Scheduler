@@ -881,3 +881,8 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 		})
 	}
 }
+
+func TestCloneKeepsInPlaceResizeMark(t *testing.T) {
+	task := &PodInfo{IsInPlaceResize: true}
+	assert.Equal(t, true, task.Clone().IsInPlaceResize)
+}

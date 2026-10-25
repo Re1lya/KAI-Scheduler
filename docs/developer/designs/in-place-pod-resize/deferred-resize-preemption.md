@@ -26,7 +26,7 @@ so an important workload can stay at its old size forever.
 | KEP-5836 | KAI |
 | --- | --- |
 | Deferred pod enters the normal scheduling queue | Deferred job enters the normal preempt/reclaim job queues |
-| Restricted cycle: own node, resource fit only | Solver pinned to the pod's node; full predicates for the pod at its desired size |
+| Restricted cycle: own node, resource fit only | Solver pinned to the pod's node; resource fit only for the pod at its desired size |
 | Standard preemption picks victims | Standard preempt/reclaim victim selection, validators and budgets |
 | Reservation via `max(spec, allocated, actual)` | Same effective-request accounting (parent design) |
 | Kubelet retries once victims are gone | Same; KAI never touches the resizing pod |
@@ -103,13 +103,14 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
 
 - Node-local. An in-place resize cannot move a pod, so victims are only
   searched on its node.
-- Full predicates, not resource fit only (unlike KEP-5836). This falls out of
-  reusing the preempt and reclaim solver; a resource-only check would need a
-  separate allocation mode in shared code. It also avoids pointless evictions:
-  on a cordoned or not-ready node nothing is evicted. The cost is that a pod
-  whose node changed under it (node affinity labels removed, a `NoSchedule`
-  taint added after it started, a referenced ConfigMap deleted) gets no
-  evictions, where upstream would preempt (see [Future work](#future-work)).
+- Resource fit only, as in KEP-5836. While it is solved, the resizing pod is
+  marked as an in-place resize (`PodInfo.IsInPlaceResize`), and checks that
+  only matter when a pod starts are skipped: Kubernetes pre-filters and
+  filters (node affinity, taints, pod affinity, host ports, volumes,
+  ConfigMaps), the solver's node-affinity scenario filter, resource claims and
+  KAI's CPU/GPU node-label rule. Capacity, resource type and GPU checks still
+  apply. So does node health, except cordon: the kubelet resizes pods on a
+  cordoned node too, but a not-ready or pressured node gets no evictions.
 - A job whose gang is not secured gets no evictions for its resizes.
 
 ## Known limitations
@@ -131,10 +132,5 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
 
 ## Future work
 
-- Resource fit only, as in KEP-5836: skip start-time checks (ConfigMap,
-  volumes, node affinity, taints) for the resizing pod on its own node, so a
-  pod whose node or references changed after it started can still get room.
-  Open question: whether a cordoned node should still block evictions (the
-  kubelet still resizes there).
 - Node opt-out: honor `spec.podPreemptionPolicy.disableResizePreemption` once
   KAI's `k8s.io/api` includes it (alpha in Kubernetes 1.37).

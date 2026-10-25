@@ -131,7 +131,8 @@ func (naf *NodeAffinitiesFilter) allPendingPodsHaveMatchingNodes(scenario *scena
 }
 
 func hasRequiredNodeAffinity(task *pod_info.PodInfo) bool {
-	if task.Pod == nil {
+	// An in-place resize is placed back on its own node regardless of its node affinity.
+	if task.Pod == nil || task.IsInPlaceResize {
 		return false
 	}
 	if task.Pod.Spec.NodeSelector != nil {

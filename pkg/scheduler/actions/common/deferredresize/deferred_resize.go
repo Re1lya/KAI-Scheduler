@@ -122,6 +122,8 @@ func attempt(
 		return false, nil
 	}
 
+	task.IsInPlaceResize = true
+	defer func() { task.IsInPlaceResize = false }()
 	stmt, result := solve(job, node, task)
 	if stmt == nil {
 		return false, result

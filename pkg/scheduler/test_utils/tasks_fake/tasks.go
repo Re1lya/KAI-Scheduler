@@ -51,6 +51,8 @@ type TestTaskBasic struct {
 	// (spec) size and these values the allocated/enacted size.
 	ResizeStatus *TestResizeStatus
 	HostPorts    []int32
+	// ConfigMapNames are required by the main container through envFrom.
+	ConfigMapNames []string
 }
 
 // TestResizeStatus uses the same units as the job's RequiredCPUsPerTask/RequiredMemoryPerTask.
@@ -154,6 +156,12 @@ func BuildPod(
 			ContainerPort: hostPort,
 			HostPort:      hostPort,
 			Protocol:      v1.ProtocolTCP,
+		})
+	}
+
+	for _, configMapName := range task.ConfigMapNames {
+		pod.Spec.Containers[0].EnvFrom = append(pod.Spec.Containers[0].EnvFrom, v1.EnvFromSource{
+			ConfigMapRef: &v1.ConfigMapEnvSource{LocalObjectReference: v1.LocalObjectReference{Name: configMapName}},
 		})
 	}
 

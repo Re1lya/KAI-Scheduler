@@ -168,6 +168,22 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
+			Name: "resizing pod whose ConfigMap was deleted reclaims",
+			Jobs: []*jobs_fake.TestJobBasic{
+				func() *jobs_fake.TestJobBasic {
+					job := reclaimResizeJob(constants.PriorityTrainNumber, 3, 1)
+					job.Tasks[0].ConfigMapNames = []string{"deleted"}
+					return job
+				}(),
+				reclaimVictimJob(2),
+			},
+			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4}},
+			Queues:                   []test_utils.TestQueueBasic{cpuQueue("queue0", 3000), cpuQueue("queue1", 1000)},
+			JobExpectedResults:       expect(pod_status.Running, pod_status.Releasing),
+			Mocks:                    mocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
 			Name: "victim on another node is not reclaimed",
 			Jobs: []*jobs_fake.TestJobBasic{
 				reclaimResizeJob(constants.PriorityTrainNumber, 3, 1),

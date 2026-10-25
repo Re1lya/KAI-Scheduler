@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -22,6 +23,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
@@ -642,31 +644,68 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			Mocks:                    evictionMocks(1),
 			DeferredResizePreemption: true,
 		},
+		// Only resource fit is checked for an in-place resize (KEP-5836), so a pod whose node or
+		// references changed after it started still gets room.
 		{
-			Name: "node no longer matching the resizing pod's node affinity does not evict",
+			Name: "node no longer matching the resizing pod's node affinity evicts",
 			Jobs: []*jobs_fake.TestJobBasic{
 				resizerWith(func(job *jobs_fake.TestJobBasic) { job.Tasks[0].NodeAffinityNames = []string{"other-pool"} }),
 				victim(),
 			},
-			Nodes:                    cpuNodes("node0"),
-			Queues:                   queues,
-			JobExpectedResults:       onlyRunning("node0", "resizer", "victim"),
-			Mocks:                    noEvictionMocks(),
+			Nodes:  cpuNodes("node0"),
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "NoSchedule taint added after the resizing pod started evicts",
+			Jobs: []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
+			Nodes: map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Taints: []v1.Taint{
+				{Key: "dedicated", Value: "other", Effect: v1.TaintEffectNoSchedule},
+			}}},
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name: "resizing pod whose ConfigMap was deleted evicts",
+			Jobs: []*jobs_fake.TestJobBasic{
+				resizerWith(func(job *jobs_fake.TestJobBasic) { job.Tasks[0].ConfigMapNames = []string{"deleted"} }),
+				victim(),
+			},
+			Nodes:  cpuNodes("node0"),
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
+			DeferredResizePreemption: true,
+		},
+		{
+			Name:   "cordoned node evicts, since the kubelet still resizes there",
+			Jobs:   []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Unschedulable: true}},
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
 			DeferredResizePreemption: true,
 		},
 		{
 			Name:                     "not ready node does not evict",
 			Jobs:                     []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
 			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Conditions: &notReady}},
-			Queues:                   queues,
-			JobExpectedResults:       onlyRunning("node0", "resizer", "victim"),
-			Mocks:                    noEvictionMocks(),
-			DeferredResizePreemption: true,
-		},
-		{
-			Name:                     "cordoned node does not evict",
-			Jobs:                     []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
-			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Unschedulable: true}},
 			Queues:                   queues,
 			JobExpectedResults:       onlyRunning("node0", "resizer", "victim"),
 			Mocks:                    noEvictionMocks(),
@@ -1028,4 +1067,32 @@ func TestDeferredResizeCommitsVictimMoves(t *testing.T) {
 			assert.GreaterOrEqual(t, activeTasks(ssn, "elastic"), 1)
 		})
 	}
+}
+
+// The DRA plugin checks only matter when a pod starts; an in-place resize keeps its claims.
+func TestPreemptForDeferredResizeIgnoresDeletedResourceClaim(t *testing.T) {
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() { featuregates.SetDynamicResourcesEnabledForTest(false) })
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+
+	topology := test_utils.TestTopologyBasic{
+		Name: "resizing pod whose resource claim was deleted evicts",
+		Jobs: []*jobs_fake.TestJobBasic{
+			resizerWith(func(job *jobs_fake.TestJobBasic) { job.Tasks[0].ResourceClaimNames = []string{"deleted"} }),
+			runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
+		},
+		Nodes:  cpuNodes("node0"),
+		Queues: []test_utils.TestQueueBasic{{Name: "queue0"}},
+		JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+			"resizer": pod_status.Running,
+			"victim":  pod_status.Releasing,
+		}),
+		TestDRAObjects:           dra_fake.TestDRAObjects{DeviceClasses: []string{"nvidia.com/gpu"}},
+		Mocks:                    evictionMocks(1),
+		DeferredResizePreemption: true,
+	}
+	ssn := test_utils.BuildSession(topology, controller)
+	preempt.New().Execute(ssn)
+	test_utils.MatchExpectedAndRealTasks(t, 0, topology, ssn)
 }

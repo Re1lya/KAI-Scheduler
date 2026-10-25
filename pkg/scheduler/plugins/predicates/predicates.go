@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -47,6 +48,12 @@ const (
 	prePredicateErrorFormat   = "%s: %v.%s\n"
 	prePredicateReasonsFormat = " Reasons: %s"
 )
+
+var unschedulableToleration = v1.Toleration{
+	Key:      v1.TaintNodeUnschedulable,
+	Operator: v1.TolerationOpExists,
+	Effect:   v1.TaintEffectNoSchedule,
+}
 
 var victimInvariantPrePredicateCandidates = []k8s_internal.PredicateName{
 	predicates.VolumeBinding,
@@ -130,6 +137,9 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.ssn = ssn
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
+		if task.IsInPlaceResize {
+			return nil
+		}
 		return pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
 	})
 	ssn.AddVictimInvariantPrePredicateFn(func(task *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
@@ -338,7 +348,12 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return err
 	}
 
-	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node, task.Pod.Spec.Tolerations)
+	tolerations := task.Pod.Spec.Tolerations
+	if task.IsInPlaceResize {
+		// The kubelet resizes pods on a cordoned node too.
+		tolerations = append(slices.Clone(tolerations), unschedulableToleration)
+	}
+	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node, tolerations)
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Check node condition predicates Task <%s/%s> on Node <%s>: fit %t, err %v",
 			task.Namespace, task.Name, node.Name, fit, err)
@@ -346,6 +361,9 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 
 	if !fit {
 		return common_info.NewFitErrorByReasons(task.Name, task.Namespace, node.Name, err, reasons...)
+	}
+	if task.IsInPlaceResize {
+		return nil
 	}
 
 	for name, predicate := range k8sPredicates {

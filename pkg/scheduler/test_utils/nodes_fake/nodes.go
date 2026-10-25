@@ -60,6 +60,7 @@ type TestNodeBasic struct {
 	NumaTopology    *node_info.NumaTopology
 	Conditions      *[]v1.NodeCondition
 	Unschedulable   bool
+	Taints          []v1.Taint
 }
 
 func BuildNodesInfoMap(
@@ -198,6 +199,7 @@ func buildNodeInfo(
 		node.Labels[labelKey] = labelValue
 	}
 	node.Spec.Unschedulable = nodeMetadata.Unschedulable
+	node.Spec.Taints = nodeMetadata.Taints
 	if nodeMetadata.Conditions != nil {
 		node.Status.Conditions = *nodeMetadata.Conditions
 	} else if nodeMetadata.GPUs > 0 {
