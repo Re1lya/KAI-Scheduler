@@ -95,7 +95,7 @@ func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*p
 // resizeRepresentative swaps the resizing pod for its stand-in and leaves out pending pods, which
 // were handled first.
 func resizeRepresentative(job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo) *podgroup_info.PodGroupInfo {
-	tasks := []*pod_info.PodInfo{pod_info.NewInPlaceResizeRequest(task)}
+	tasks := []*pod_info.PodInfo{pod_info.NewResizeStandIn(task)}
 	for _, allocated := range job.GetAllAllocatedPods() {
 		if allocated.UID != task.UID {
 			tasks = append(tasks, allocated)

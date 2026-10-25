@@ -477,11 +477,11 @@ func (pgi *PodGroupInfo) GetNumPendingTasks() int {
 	return len(pgi.PodStatusIndex[pod_status.Pending])
 }
 
-// IsInPlaceResizeRequest reports whether the job's pending tasks are all deferred resize stand-ins.
-func (pgi *PodGroupInfo) IsInPlaceResizeRequest() bool {
+// IsResizeStandIn reports whether the job's pending tasks are all deferred resize stand-ins.
+func (pgi *PodGroupInfo) IsResizeStandIn() bool {
 	pending := pgi.PodStatusIndex[pod_status.Pending]
 	for _, task := range pending {
-		if !task.IsInPlaceResize {
+		if !task.IsResizeStandIn {
 			return false
 		}
 	}

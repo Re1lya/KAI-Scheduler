@@ -12,8 +12,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
 
-func TestIsInPlaceResizeRequest(t *testing.T) {
-	standIn := &pod_info.PodInfo{UID: "stand-in", Status: pod_status.Pending, IsInPlaceResize: true}
+func TestIsResizeStandIn(t *testing.T) {
+	standIn := &pod_info.PodInfo{UID: "stand-in", Status: pod_status.Pending, IsResizeStandIn: true}
 	pending := &pod_info.PodInfo{UID: "pending", Status: pod_status.Pending}
 	running := &pod_info.PodInfo{UID: "running", Status: pod_status.Running}
 	tests := []struct {
@@ -35,7 +35,7 @@ func TestIsInPlaceResizeRequest(t *testing.T) {
 				}
 				job.PodStatusIndex[task.Status][task.UID] = task
 			}
-			assert.Equal(t, tt.want, job.IsInPlaceResizeRequest())
+			assert.Equal(t, tt.want, job.IsResizeStandIn())
 		})
 	}
 }

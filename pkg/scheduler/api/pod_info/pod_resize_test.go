@@ -117,21 +117,21 @@ func TestIsDeferredResizeTask_SidecarUpsize(t *testing.T) {
 	assert.True(t, IsDeferredResizeTask(&PodInfo{Pod: pod, Status: pod_status.Running}))
 }
 
-func TestNewInPlaceResizeRequest(t *testing.T) {
+func TestNewResizeStandIn(t *testing.T) {
 	task := NewTaskInfo(resizeTask(pod_status.Running, "2", "1", "1").Pod, resource_info.NewResourceVectorMap())
 	task.NodeName, task.Status = "node0", pod_status.Running
 
-	request := NewInPlaceResizeRequest(task)
+	request := NewResizeStandIn(task)
 
 	assert.Equal(t, task.UID, request.UID)
 	assert.Equal(t, "node0", request.NodeName)
 	assert.Equal(t, pod_status.Pending, request.Status)
-	assert.True(t, request.IsInPlaceResize)
+	assert.True(t, request.IsResizeStandIn)
 	assert.True(t, request.ResReqVector.IsZero())
 	assert.True(t, request.GpuRequirement.IsEmpty())
-	assert.True(t, request.Clone().IsInPlaceResize)
+	assert.True(t, request.Clone().IsResizeStandIn)
 
 	assert.Equal(t, pod_status.Running, task.Status)
-	assert.False(t, task.IsInPlaceResize)
+	assert.False(t, task.IsResizeStandIn)
 	assert.False(t, task.ResReqVector.IsZero())
 }

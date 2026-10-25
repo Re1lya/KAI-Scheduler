@@ -33,7 +33,7 @@ The resizing pod is never evicted or re-placed; only victims are.
    terminating.
 3. Otherwise the action solves a copy of the job that holds its allocated
    pods and, instead of the resizing pod, a pending **stand-in**
-   (`pod_info.NewInPlaceResizeRequest`). The stand-in requests nothing,
+   (`pod_info.NewResizeStandIn`). The stand-in requests nothing,
    because the node already charges the pod at its target size. This is
    KEP-5836's `max(0, request - cached)`, which is zero for a pod already in
    the cache. Pending pods are left out of the copy.

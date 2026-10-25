@@ -131,7 +131,7 @@ func (naf *NodeAffinitiesFilter) allPendingPodsHaveMatchingNodes(scenario *scena
 }
 
 func hasRequiredNodeAffinity(task *pod_info.PodInfo) bool {
-	if task.Pod == nil || task.IsInPlaceResize {
+	if task.Pod == nil || task.IsResizeStandIn {
 		return false
 	}
 	if task.Pod.Spec.NodeSelector != nil {

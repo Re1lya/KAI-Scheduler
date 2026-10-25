@@ -110,12 +110,12 @@ func TestAttemptForJob_SolvesEachDeferredTaskWithAStandIn(t *testing.T) {
 		resizing := taskByName(job, []string{"resizer-0", "resizer-1"}[i])
 		require.Len(t, call.job.GetAllPodsMap(), 3, "pending pods are left out")
 		standIn := call.job.GetAllPodsMap()[resizing.UID]
-		assert.True(t, standIn.IsInPlaceResize)
+		assert.True(t, standIn.IsResizeStandIn)
 		assert.Equal(t, pod_status.Pending, standIn.Status)
 		assert.Equal(t, resizing.NodeName, standIn.NodeName)
 		assert.True(t, standIn.ResReqVector.IsZero(), "the node already charges the target size")
 		assert.Equal(t, pod_status.Running, resizing.Status)
-		assert.False(t, resizing.IsInPlaceResize)
+		assert.False(t, resizing.IsResizeStandIn)
 	}
 }
 

@@ -21,15 +21,15 @@ func IsDeferredResizeTask(task *PodInfo) bool {
 	return resourcehelpers.IsPodResizeDeferred(pod) && hasPendingUpsize(pod)
 }
 
-// NewInPlaceResizeRequest returns a pending stand-in for a deferred resize task. It requests nothing,
+// NewResizeStandIn returns a pending stand-in for a deferred resize task. It requests nothing,
 // as KEP-5836's request minus cached footprint: the node already charges the task at its target size.
-func NewInPlaceResizeRequest(task *PodInfo) *PodInfo {
-	request := task.Clone()
-	request.Status = pod_status.Pending
-	request.IsInPlaceResize = true
-	request.ResReqVector = make(resource_info.ResourceVector, len(task.ResReqVector))
-	request.GpuRequirement = *resource_info.NewGpuResourceRequirement()
-	return request
+func NewResizeStandIn(task *PodInfo) *PodInfo {
+	standIn := task.Clone()
+	standIn.Status = pod_status.Pending
+	standIn.IsResizeStandIn = true
+	standIn.ResReqVector = make(resource_info.ResourceVector, len(task.ResReqVector))
+	standIn.GpuRequirement = *resource_info.NewGpuResourceRequirement()
+	return standIn
 }
 
 // hasPendingUpsize guards against a stale Deferred condition left after a later downsize.
