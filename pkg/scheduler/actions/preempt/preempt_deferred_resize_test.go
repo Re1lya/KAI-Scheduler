@@ -690,7 +690,7 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name:   "cordoned node evicts, since the kubelet still resizes there",
+			Name:   "cordoned node evicts",
 			Jobs:   []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
 			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Unschedulable: true}},
 			Queues: queues,
@@ -702,12 +702,15 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			DeferredResizePreemption: true,
 		},
 		{
-			Name:                     "not ready node does not evict",
-			Jobs:                     []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
-			Nodes:                    map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Conditions: &notReady}},
-			Queues:                   queues,
-			JobExpectedResults:       onlyRunning("node0", "resizer", "victim"),
-			Mocks:                    noEvictionMocks(),
+			Name:   "not ready node evicts",
+			Jobs:   []*jobs_fake.TestJobBasic{deferredResizeJob("resizer", "node0", 3, 1), victim()},
+			Nodes:  map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 4, Conditions: &notReady}},
+			Queues: queues,
+			JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
+				"resizer": pod_status.Running,
+				"victim":  pod_status.Releasing,
+			}),
+			Mocks:                    evictionMocks(1),
 			DeferredResizePreemption: true,
 		},
 		{

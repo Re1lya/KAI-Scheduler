@@ -105,12 +105,12 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   searched on its node.
 - Resource fit only, as in KEP-5836. While it is solved, the resizing pod is
   marked as an in-place resize (`PodInfo.IsInPlaceResize`), and checks that
-  only matter when a pod starts are skipped: Kubernetes pre-filters and
-  filters (node affinity, taints, pod affinity, host ports, volumes,
-  ConfigMaps), the solver's node-affinity scenario filter, resource claims and
-  KAI's CPU/GPU node-label rule. Capacity, resource type and GPU checks still
-  apply. So does node health, except cordon: the kubelet resizes pods on a
-  cordoned node too, but a not-ready or pressured node gets no evictions.
+  only matter when a pod starts are skipped: node health (cordon, not ready,
+  pressure), Kubernetes pre-filters and filters (node affinity, taints, pod
+  affinity, host ports, volumes, ConfigMaps), the solver's node-affinity
+  scenario filter, resource claims and KAI's CPU/GPU node-label rule.
+  Capacity, resource type and GPU checks still apply. On a node that is not
+  ready the evictions may not help, since the kubelet may not apply the resize.
 - A job whose gang is not secured gets no evictions for its resizes.
 
 ## Known limitations

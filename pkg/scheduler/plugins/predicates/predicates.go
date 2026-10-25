@@ -24,7 +24,6 @@ import (
 	"slices"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -48,12 +47,6 @@ const (
 	prePredicateErrorFormat   = "%s: %v.%s\n"
 	prePredicateReasonsFormat = " Reasons: %s"
 )
-
-var unschedulableToleration = v1.Toleration{
-	Key:      v1.TaintNodeUnschedulable,
-	Operator: v1.TolerationOpExists,
-	Effect:   v1.TaintEffectNoSchedule,
-}
 
 var victimInvariantPrePredicateCandidates = []k8s_internal.PredicateName{
 	predicates.VolumeBinding,
@@ -348,12 +341,11 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return err
 	}
 
-	tolerations := task.Pod.Spec.Tolerations
 	if task.IsInPlaceResize {
-		// The kubelet resizes pods on a cordoned node too.
-		tolerations = append(slices.Clone(tolerations), unschedulableToleration)
+		return nil
 	}
-	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node, tolerations)
+
+	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node, task.Pod.Spec.Tolerations)
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Check node condition predicates Task <%s/%s> on Node <%s>: fit %t, err %v",
 			task.Namespace, task.Name, node.Name, fit, err)
@@ -361,9 +353,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 
 	if !fit {
 		return common_info.NewFitErrorByReasons(task.Name, task.Namespace, node.Name, err, reasons...)
-	}
-	if task.IsInPlaceResize {
-		return nil
 	}
 
 	for name, predicate := range k8sPredicates {
