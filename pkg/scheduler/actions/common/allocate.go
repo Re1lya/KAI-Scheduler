@@ -27,10 +27,15 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 		return false
 	}
 	// A resize stand-in's target size is already charged on its node, and start-time checks do not apply.
-	if task := tasksToAllocate[0]; task.IsInPlaceResize {
-		return slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
-			return node.IsInPlaceResizeAllocatable(task)
-		})
+	if job.IsInPlaceResizeRequest() {
+		for _, task := range tasksToAllocate {
+			if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
+				return node.IsInPlaceResizeAllocatable(task)
+			}) {
+				return false
+			}
+		}
+		return true
 	}
 	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
 
