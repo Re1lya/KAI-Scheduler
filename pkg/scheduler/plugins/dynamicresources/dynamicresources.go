@@ -156,10 +156,6 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 }
 
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
-	// An in-place resize keeps its allocated claims.
-	if task.IsInPlaceResize {
-		return nil
-	}
 	pod := task.Pod
 
 	hasStandardClaims := len(pod.Spec.ResourceClaims) > 0
@@ -228,9 +224,6 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 }
 
 func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
-	if task.IsInPlaceResize {
-		return nil
-	}
 	pod := task.Pod
 
 	hasDRAExtResources := task.ExtendedResourceClaim != nil

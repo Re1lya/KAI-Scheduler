@@ -14,7 +14,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -23,7 +22,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
@@ -1067,32 +1065,4 @@ func TestDeferredResizeCommitsVictimMoves(t *testing.T) {
 			assert.GreaterOrEqual(t, activeTasks(ssn, "elastic"), 1)
 		})
 	}
-}
-
-// An in-place resize keeps its claims, so DRA checks are skipped.
-func TestPreemptForDeferredResizeIgnoresDeletedResourceClaim(t *testing.T) {
-	featuregates.SetDynamicResourcesEnabledForTest(true)
-	t.Cleanup(func() { featuregates.SetDynamicResourcesEnabledForTest(false) })
-	test_utils.InitTestingInfrastructure()
-	controller := NewController(t)
-
-	topology := test_utils.TestTopologyBasic{
-		Name: "resizing pod whose resource claim was deleted evicts",
-		Jobs: []*jobs_fake.TestJobBasic{
-			resizerWith(func(job *jobs_fake.TestJobBasic) { job.Tasks[0].ResourceClaimNames = []string{"deleted"} }),
-			runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
-		},
-		Nodes:  cpuNodes("node0"),
-		Queues: []test_utils.TestQueueBasic{{Name: "queue0"}},
-		JobExpectedResults: expectStatuses("node0", map[string]pod_status.PodStatus{
-			"resizer": pod_status.Running,
-			"victim":  pod_status.Releasing,
-		}),
-		TestDRAObjects:           dra_fake.TestDRAObjects{DeviceClasses: []string{"nvidia.com/gpu"}},
-		Mocks:                    evictionMocks(1),
-		DeferredResizePreemption: true,
-	}
-	ssn := test_utils.BuildSession(topology, controller)
-	preempt.New().Execute(ssn)
-	test_utils.MatchExpectedAndRealTasks(t, 0, topology, ssn)
 }
