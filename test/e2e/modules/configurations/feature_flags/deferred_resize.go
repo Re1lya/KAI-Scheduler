@@ -13,8 +13,7 @@ import (
 
 const deferredResizePreemptionArg = "deferred-resize-preemption"
 
-// SetDeferredResizePreemption sets the scheduler's deferred-resize-preemption flag on the
-// default shard. nil removes the override, restoring the default (disabled).
+// SetDeferredResizePreemption removes the override when enabled is nil.
 func SetDeferredResizePreemption(ctx context.Context, testCtx *testContext.TestContext, enabled *bool) error {
 	return patchShard(
 		ctx, testCtx, defaultShardName,

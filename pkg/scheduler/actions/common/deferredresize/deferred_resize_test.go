@@ -254,8 +254,7 @@ func TestAttemptForJob_ScansDeferredTasksOnKnownNodesInOrder(t *testing.T) {
 	job := ssn.ClusterInfo.PodGroupInfos["multi"]
 
 	var tried []string
-	// Both nodes are short on room, so every deferred task reaches the solver: node0's one, then
-	// node1's two. The Infeasible, non-resizing and unknown-node pods are not attempted.
+	// Infeasible, non-resizing and unknown-node pods are skipped.
 	deferredresize.AttemptForJob(ssn, job, framework.Preempt, noGeneratorSolve(ssn, &tried), neverStop)
 	assert.Equal(t, []string{"node0", "node1", "node1"}, tried)
 }

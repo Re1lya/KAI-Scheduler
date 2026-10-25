@@ -24,8 +24,7 @@ type JobsOrderInitOptions struct {
 	FilterWithinPreemptionDelay bool
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
-	// NonPendingJobFilter keeps a job without pending tasks despite FilterNonPending when it
-	// returns true. Nil drops all such jobs.
+	// NonPendingJobFilter keeps a job without pending tasks despite FilterNonPending.
 	NonPendingJobFilter func(*podgroup_info.PodGroupInfo) bool
 }
 

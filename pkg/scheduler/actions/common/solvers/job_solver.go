@@ -58,8 +58,7 @@ func NewJobsSolver(
 	}
 }
 
-// PinFeasibleNodes keeps the pending job on the given feasible nodes; nodes of victims are not
-// added as placement candidates.
+// PinFeasibleNodes keeps the pending job on the given nodes; victims' nodes are not added.
 func (s *JobSolver) PinFeasibleNodes() *JobSolver {
 	s.pinnedFeasibleNodes = true
 	return s
@@ -101,8 +100,7 @@ func (s *JobSolver) SolveWithResult(
 	return s.SolveTasksWithResult(ssn, pendingJob, tasksToAllocate)
 }
 
-// SolveTasksWithResult solves for the given tasks of pendingJob instead of the tasks selected by
-// gang admission, e.g. for tasks virtually evicted in the session that gang admission skips.
+// SolveTasksWithResult solves the given tasks, e.g. virtually evicted ones that gang admission skips.
 func (s *JobSolver) SolveTasksWithResult(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo,
 ) (solved bool, statement *framework.Statement, victimTaskNames []string, searchResult *SearchResult) {
@@ -390,7 +388,6 @@ func (s *JobSolver) solvePartialJob(
 	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
 }
 
-// probeFeasibleNodes returns the solver's nodes plus, unless pinned, the nodes of recorded victims.
 func (s *JobSolver) probeFeasibleNodes(ssn *framework.Session, state *solvingState) map[string]*node_info.NodeInfo {
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {

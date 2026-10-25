@@ -47,8 +47,7 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
-	// ResizeStatus models an in-place resize: the job's per-task request becomes the desired
-	// (spec) size and these values the allocated/enacted size.
+	// ResizeStatus holds the allocated/enacted size; the job's request is the desired size.
 	ResizeStatus *TestResizeStatus
 	HostPorts    []int32
 	// ConfigMapNames are required by the main container through envFrom.
