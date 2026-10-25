@@ -119,9 +119,9 @@ the "easier to schedule" signature cache, which is keyed on pending tasks.
   during the search, so evictions happen only when every deferred resize on
   the node can be met; there is no partial relief.
 - GPUs are never part of a resize delta.
-- Pods with a NUMA placement get no evictions for their resizes: KAI cannot
-  predict which zones the kubelet grows them into, so freed room could be in
-  the wrong zone.
+- NUMA zones are ignored, as in KEP-5836: a NUMA-placed pod keeps its zones
+  in the search and only node-level room is freed, so the kubelet may still
+  defer the resize if the room is in another zone.
 - Freed room is reserved by charging the resizing pod at its desired size.
   KAI and kube-scheduler (which uses the same effective-request accounting)
   do not place other pods into it. A pod bound to the node directly (static

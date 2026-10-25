@@ -232,6 +232,10 @@ func (pp *numaPlugin) wantsNuma(task *pod_info.PodInfo) bool {
 
 // placement rejects if the node's ledger changed after the predicate admitted the task.
 func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, error) {
+	// An in-place resize stays in its zones; only node-level fit is checked, as in KEP-5836.
+	if task.IsInPlaceResize {
+		return task.NUMAPlacement.Clone(), nil
+	}
 	allocation, admit := pp.evaluate(task, node)
 	if !admit {
 		return pod_info.NUMAPlacement{}, errNotNumaAligned
@@ -240,6 +244,9 @@ func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo
 }
 
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+	if task.IsInPlaceResize {
+		return nil
+	}
 	if !pp.allocatable(task, node) {
 		// FittingNode already logs this failure at V(6); the shared sentinel keeps the reject path
 		// allocation-free (see errNotNumaAligned).

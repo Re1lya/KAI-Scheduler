@@ -146,3 +146,47 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 	assert.Equal(t, int64(1), zone(1), "victim charged on zone 1")
 	assert.Equal(t, int64(1), zone(0), "zone 0 unchanged (preemptor only)")
 }
+
+// An in-place resize keeps its zones and skips the zone check, even when no zone fits its new size.
+func TestInPlaceResizeKeepsItsZones(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs := []*jobs_fake.TestJobBasic{
+		{Name: "resizer", QueueName: "q", RequiredCPUsPerTask: 6,
+			Tasks: []*tasks_fake.TestTaskBasic{{State: pod_status.Running, NodeName: "node0"}}},
+	}
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(
+		map[string]nodes_fake.TestNodeBasic{"node0": {CPUMillis: 16000, CPUMemory: 16000}},
+		tasksToNodeMap, nil, vectorMap)
+	node := nodesInfoMap["node0"]
+	node.NumaTopology = nodes_fake.NewNumaTopologyWithMap(
+		node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, vectorMap,
+		cpuZone("node-0", "4", "1"), cpuZone("node-1", "4", "4"),
+	)
+	resizer := singleTask(jobsInfoMap["resizer"])
+	resizer.Pod.Status.QOSClass = v1.PodQOSGuaranteed
+	setObservedPlacement(resizer, "node-0", "3")
+
+	ssn := &framework.Session{
+		ClusterInfo: &schedapi.ClusterInfo{PodGroupInfos: jobsInfoMap, Nodes: nodesInfoMap},
+	}
+	numa.New(framework.PluginArguments{}).OnSessionOpen(ssn)
+	cpuIdx := vectorMap.GetIndex("cpu")
+	zone := func(i int) int64 { return int64(node.NumaTopology.Zones[i].Available.Get(cpuIdx)) / 1000 }
+
+	stmt := ssn.Statement()
+	require.NoError(t, stmt.Evict(resizer, "", eviction_info.EvictionMetadata{}))
+	resizer.IsInPlaceResize = true
+
+	require.NoError(t, ssn.PredicateFn(resizer, jobsInfoMap["resizer"], node), "no zone fits 6 cpu, but zones are ignored")
+	placement, err := ssn.GetNumaPlacement(resizer, node)
+	require.NoError(t, err)
+	assert.Equal(t, []int{0}, placement.ZoneIndices(), "keeps its current zone")
+
+	resizer.NUMAPlacement = placement
+	require.NoError(t, stmt.Pipeline(resizer, "node0", false))
+	assert.Equal(t, int64(1), zone(0))
+	assert.Equal(t, int64(4), zone(1))
+	stmt.Discard()
+	assert.Equal(t, int64(1), zone(0), "discard restores the ledger")
+}

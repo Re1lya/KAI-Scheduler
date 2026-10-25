@@ -12,9 +12,8 @@ import (
 
 var resizableResources = []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory}
 
-// IsDeferredResizeTask excludes NUMA-placed tasks: the zones the kubelet grows them into are unknown.
 func IsDeferredResizeTask(task *PodInfo) bool {
-	if task == nil || task.Pod == nil || task.Status != pod_status.Running || !task.NUMAPlacement.IsEmpty() {
+	if task == nil || task.Pod == nil || task.Status != pod_status.Running {
 		return false
 	}
 	pod := task.Pod
