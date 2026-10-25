@@ -644,8 +644,7 @@ func deferredResizePreemptEdgeTopologies() []test_utils.TestTopologyBasic {
 			Mocks:                    evictionMocks(1),
 			DeferredResizePreemption: true,
 		},
-		// Only resource fit is checked for an in-place resize (KEP-5836), so a pod whose node or
-		// references changed after it started still gets room.
+		// Only resource fit is checked for an in-place resize (KEP-5836).
 		{
 			Name: "node no longer matching the resizing pod's node affinity evicts",
 			Jobs: []*jobs_fake.TestJobBasic{
@@ -1067,7 +1066,7 @@ func TestDeferredResizeCommitsVictimMoves(t *testing.T) {
 	}
 }
 
-// The DRA plugin checks only matter when a pod starts; an in-place resize keeps its claims.
+// An in-place resize keeps its claims, so DRA checks are skipped.
 func TestPreemptForDeferredResizeIgnoresDeletedResourceClaim(t *testing.T) {
 	featuregates.SetDynamicResourcesEnabledForTest(true)
 	t.Cleanup(func() { featuregates.SetDynamicResourcesEnabledForTest(false) })

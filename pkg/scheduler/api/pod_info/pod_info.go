@@ -104,8 +104,7 @@ type PodInfo struct {
 	Status          pod_status.PodStatus
 	IsVirtualStatus bool
 	IsLegacyMIGtask bool
-	// IsInPlaceResize marks a running task being placed back on its own node at its new size, so
-	// only resource fit is checked (KEP-5836); checks that matter only when a pod starts are skipped.
+	// IsInPlaceResize skips checks that matter only when a pod starts (KEP-5836).
 	IsInPlaceResize bool
 
 	BindRequest *bindrequest_info.BindRequestInfo

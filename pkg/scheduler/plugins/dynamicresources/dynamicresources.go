@@ -156,7 +156,7 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 }
 
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
-	// An in-place resize keeps the pod's allocated claims; only resource fit is checked.
+	// An in-place resize keeps its allocated claims.
 	if task.IsInPlaceResize {
 		return nil
 	}
