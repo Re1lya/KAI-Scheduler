@@ -994,8 +994,7 @@ func activeTasks(ssn *framework.Session, jobName string) int {
 	return count
 }
 
-// The solver restores a victim job to its minimum on the victims' own nodes, not only on the
-// resizing pod's node.
+// Victims may be restored on other nodes.
 func TestDeferredResizeKeepsMultiNodeVictimAtItsMinimum(t *testing.T) {
 	for localIndex := 0; localIndex < 3; localIndex++ {
 		t.Run(fmt.Sprintf("local pod at index %d", localIndex), func(t *testing.T) {
@@ -1012,8 +1011,7 @@ func TestDeferredResizeKeepsMultiNodeVictimAtItsMinimum(t *testing.T) {
 	}
 }
 
-// Evicting the elastic job alone is not enough, so "other" goes too, which leaves room for one
-// elastic pod. The solver keeps that pod running, possibly on another node, and so must the commit.
+// The solver keeps one elastic pod running, possibly moved; so must the commit.
 func TestDeferredResizeCommitsVictimMoves(t *testing.T) {
 	for localIndex := 0; localIndex < 2; localIndex++ {
 		t.Run(fmt.Sprintf("local pod at index %d", localIndex), func(t *testing.T) {

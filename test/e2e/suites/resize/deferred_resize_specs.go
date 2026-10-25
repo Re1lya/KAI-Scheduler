@@ -36,8 +36,7 @@ const (
 	deferredResizeQuietFor = 30 * time.Second
 )
 
-// deferredResizeSetup is a running resizer pod and two lower-priority fillers on its node,
-// with a pending resize of the resizer that only fits after one filler is gone.
+// The resize fits only after one of the two fillers is gone.
 type deferredResizeSetup struct {
 	resizer   *v1.Pod
 	fillers   []*v1.Pod
@@ -63,13 +62,13 @@ func DescribeDeferredResizeSpecs() bool {
 
 			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 			testQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
-			// No deserved quota: everything this queue runs is over its fair share and reclaimable.
+			// No deserved quota, so all of it is reclaimable.
 			overShareQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 			overShareQueue.Spec.Resources.CPU.Quota = 0
 			overShareQueue.Spec.Resources.CPU.OverQuotaWeight = 0
 			overShareQueue.Spec.Resources.Memory.Quota = 0
 			overShareQueue.Spec.Resources.Memory.OverQuotaWeight = 0
-			// Deserved quota above any kind cluster's size, so the resize stays within fair share.
+			// Above any kind cluster's size, so the resize stays within fair share.
 			reclaimerQueue = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 			reclaimerQueue.Spec.Resources.CPU.Quota = 1000000
 			reclaimerQueue.Spec.Resources.Memory.Quota = 1000000
@@ -111,7 +110,7 @@ func DescribeDeferredResizeSpecs() bool {
 		})
 
 		It("evicts a lower-priority pod on the node so the deferred resize is enacted", func(ctx context.Context) {
-			// Observe Deferred before enabling the flag; with it on, room is freed before a poll sees it.
+			// With the flag on, room may be freed before a poll sees Deferred.
 			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(false))).To(Succeed())
 			setup := createDeferredResize(ctx, testCtx, testQueue, testQueue, highPriorityClass, lowPriorityClass)
 			Expect(feature_flags.SetDeferredResizePreemption(ctx, testCtx, ptr.To(true))).To(Succeed())
@@ -127,8 +126,6 @@ func DescribeDeferredResizeSpecs() bool {
 	})
 }
 
-// expectResizeEnactedAfterOneEviction checks that exactly one filler is evicted, the kubelet
-// enacts the resize, and nothing more is evicted afterwards.
 func expectResizeEnactedAfterOneEviction(ctx context.Context, testCtx *testcontext.TestContext, setup *deferredResizeSetup) {
 	countEvicted := func() int {
 		evicted := 0

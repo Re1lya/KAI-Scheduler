@@ -77,7 +77,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			return
 		}
 
-		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
+		// Pending pods get the first pick of victims.
 		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Reclaim,
 			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
 			return
@@ -137,8 +137,7 @@ func (ra *reclaimAction) reclaimForPendingTasks(
 	return false
 }
 
-// solveDeferredResize counts only the job's allocated pods and the resizing pod toward the reclaim
-// check and the victim filter, not the demand of its pending pods.
+// Pending pods' demand counts neither for the reclaim check nor for the victim filter.
 func solveDeferredResize(ssn *framework.Session, actionBudget *solvers.ActionSearchBudget) deferredresize.Solve {
 	return func(
 		job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,

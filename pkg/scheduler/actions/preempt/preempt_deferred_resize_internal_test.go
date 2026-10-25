@@ -70,8 +70,7 @@ func TestSolveDeferredResizeChecksNonPreemptibleQuotaForTheResizingTask(t *testi
 	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason(), "the solver ran")
 }
 
-// A job queued only for a deferred resize must not reach the pending path, where it would be
-// recorded as a failed job with no demand and make every later job in its queue look harder.
+// A failed resize-only job has no demand and would make every later job in its queue look harder.
 func TestPreemptForPendingTasksSkipsJobWithoutPendingTasks(t *testing.T) {
 	ssn, _, running, _ := newPreemptVictimQueueTestSession()
 	require.Zero(t, running.GetNumPendingTasks())

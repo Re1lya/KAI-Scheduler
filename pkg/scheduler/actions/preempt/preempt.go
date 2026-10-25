@@ -77,7 +77,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 			return
 		}
 
-		// Pending pods get the first pick of victims; the resize is tried afterwards either way.
+		// Pending pods get the first pick of victims.
 		if shouldStop := deferredresize.AttemptForJob(ssn, job, framework.Preempt,
 			solveDeferredResize(ssn, actionBudget), shouldStopActionForSearchResult); shouldStop {
 			return

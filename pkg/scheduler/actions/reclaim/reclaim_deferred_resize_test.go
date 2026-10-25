@@ -249,8 +249,7 @@ func deferredResizeReclaimTopologies() []test_utils.TestTopologyBasic {
 	}
 }
 
-// The victim filter must see the resize demand only. A GPU-requesting pending sibling would make the
-// victim's queue, over quota but within fair share, look unreclaimable when the sibling sorts first.
+// A GPU-requesting pending sibling must not hide a reclaimable CPU victim.
 func TestReclaimForDeferredResizeIgnoresPendingDemandInVictimFilter(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
 	controller := NewController(t)

@@ -1,12 +1,8 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-// Package deferredresize lets preempt and reclaim free room on a node for in-place resizes
-// that the kubelet marked as Deferred.
-//
-// The resizing pods are virtually evicted inside a statement so the job solver sees them as
-// pending at their desired size, pinned to their own node. On success only the victim
-// evictions are committed; the resizing pods are never evicted.
+// Package deferredresize lets preempt and reclaim free room for kubelet-Deferred in-place resizes.
+// The resizing pod is only virtually evicted, never for real.
 package deferredresize
 
 import (
@@ -25,14 +21,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// Solve runs the action's admission check and job solver for one virtually evicted resizing task.
-// The solver must be pinned to node (an in-place resize cannot move the pod) and take victims from
-// node only. A nil statement means no solution.
+// Solve must pin the task to node and take victims from node only. A nil statement means no solution.
 type Solve func(
 	job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo, task *pod_info.PodInfo,
 ) (*framework.Statement, *solvers.SearchResult)
 
-// hasDeferredResize reports whether any pod of the job has a deferred in-place upsize.
 func hasDeferredResize(job *podgroup_info.PodGroupInfo) bool {
 	for _, task := range job.GetAllPodsMap() {
 		if pod_info.IsDeferredResizeTask(task) {
@@ -42,8 +35,7 @@ func hasDeferredResize(job *podgroup_info.PodGroupInfo) bool {
 	return false
 }
 
-// NonPendingJobFilter keeps jobs without pending pods in an action's job queue when they have
-// a deferred resize. It is nil when the feature is disabled.
+// NonPendingJobFilter is nil when the feature is disabled.
 func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInfo) bool {
 	if !ssn.DeferredResizePreemptionEnabled() {
 		return nil
@@ -51,7 +43,6 @@ func NonPendingJobFilter(ssn *framework.Session) func(*podgroup_info.PodGroupInf
 	return hasDeferredResize
 }
 
-// HasActiveAllocatedTaskOnNode reports whether a candidate victim job can free room on the node.
 func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName string) bool {
 	for _, task := range job.GetAllPodsMap() {
 		if task.NodeName == nodeName && pod_status.IsActiveAllocatedStatus(task.Status) {
@@ -61,10 +52,8 @@ func HasActiveAllocatedTaskOnNode(job *podgroup_info.PodGroupInfo, nodeName stri
 	return false
 }
 
-// AttemptForJob tries each deferred task of the job, found by scanning the job when it is popped
-// so earlier evictions and moves in the session are taken into account. It returns true when the
-// action should stop, as judged by shouldStopForResult on a failed attempt (e.g. the search
-// budget is exhausted).
+// AttemptForJob scans the job when popped, so earlier evictions and moves are seen. It returns
+// whether the action should stop.
 func AttemptForJob(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo,
 	actionType framework.ActionType, solve Solve, shouldStopForResult func(*solvers.SearchResult) bool,
@@ -87,7 +76,6 @@ func AttemptForJob(
 	return false
 }
 
-// deferredTasks returns the job's deferred resize tasks on known nodes, sorted by name.
 func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
 	var tasks []*pod_info.PodInfo
 	for _, task := range job.GetAllPodsMap() {
@@ -99,13 +87,8 @@ func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*p
 	return tasks
 }
 
-// attempt frees room on node for one deferred resize task, which must be current (as found by the
-// scan in AttemptForJob). One task per attempt is enough: other deferred tasks on the node are
-// already charged at their desired size, so this task fits back only once the whole node
-// shortfall is covered. It also matters for correctness: with several tasks, the solver re-picks
-// them by the job's gang rule and may place only some, but one task is the only one it can pick.
-// The job's own attempts never evict its own pods and discard their statements, so the task stays
-// current across the job's attempts. succeeded is true without evictions when the node already has room.
+// attempt handles one task: other deferred tasks on the node are already charged at their target
+// size, and with several tasks the solver may place only some.
 func attempt(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
 	task *pod_info.PodInfo, actionType framework.ActionType, solve Solve,
@@ -127,12 +110,12 @@ func attempt(
 		return false, result
 	}
 	defer stmt.Discard()
-	// JobSolver reports unsolved here since a Releasing task already counts as active.
+	// The solved flag is always false here: a Releasing task already counts as active.
 	victims := stmt.EvictedTasks()
 	if result.Reason() != solvers.SearchResultSolved || len(victims) == 0 {
 		return false, result
 	}
-	// Commit the victims' evictions and moves as solved, without the resizing pod's placement.
+	// Keep the victims' evictions and moves, not the resizing pod's placement.
 	if err := stmt.Unpipeline(task); err != nil {
 		log.InfraLogger.Errorf("Failed to undo the placement of deferred resize task <%s/%s>: %v",
 			task.Namespace, task.Name, err)
@@ -147,14 +130,12 @@ func attempt(
 	return true, result
 }
 
-// isGangSecured reports whether the job meets its gang minimum with allocated pods. A job that
-// is not yet working must not evict others so that one of its pods can grow.
+// A job below its gang minimum must not evict others so one of its pods can grow.
 func isGangSecured(job *podgroup_info.PodGroupInfo) bool {
 	return job.RootSubGroupSet != nil && job.RootSubGroupSet.IsMinRequirementSatisfied()
 }
 
-// ResizeRepresentative returns a copy of the job with only its allocated pods and the given
-// resizing tasks, so job-level checks do not count the demand of its pending pods.
+// ResizeRepresentative copies the job without its pending pods, so their demand is not counted.
 func ResizeRepresentative(job *podgroup_info.PodGroupInfo, tasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
 	return job.CloneWithTasks(append(job.GetAllAllocatedPods(), tasks...))
 }

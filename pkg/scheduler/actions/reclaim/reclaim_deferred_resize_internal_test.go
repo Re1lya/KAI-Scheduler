@@ -73,8 +73,7 @@ func TestSolveDeferredResizeChecksCanReclaimResourcesWithoutPendingPods(t *testi
 	require.Equal(t, 1, solutionStarts)
 }
 
-// A job queued only for a deferred resize must not reach the pending path, where it would be
-// recorded as a failed job with no demand and make every later job in its queue look harder.
+// A failed resize-only job has no demand and would make every later job in its queue look harder.
 func TestReclaimForPendingTasksSkipsJobWithoutPendingTasks(t *testing.T) {
 	ssn, _, running, _ := newVictimQueueTestSession()
 	require.Zero(t, running.GetNumPendingTasks())

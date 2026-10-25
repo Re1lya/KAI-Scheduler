@@ -121,8 +121,7 @@ func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
 	}
 }
 
-// victimNodes returns where victims may be placed back. Pinned feasible nodes bind only the pending
-// job; victims may still be placed back or moved to any node, as in an unpinned solve.
+// Pinning binds only the pending job; victims may still go to any node.
 func (s *byPodSolver) victimNodes(ssn *framework.Session, nodes []*node_info.NodeInfo) []*node_info.NodeInfo {
 	if !s.pinnedFeasibleNodes {
 		return nodes
