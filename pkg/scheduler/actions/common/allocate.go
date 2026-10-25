@@ -28,14 +28,7 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	}
 	// A resize stand-in's target size is already charged on its node, and start-time checks do not apply.
 	if job.IsInPlaceResizeRequest() {
-		for _, task := range tasksToAllocate {
-			if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
-				return node.IsInPlaceResizeAllocatable(task)
-			}) {
-				return false
-			}
-		}
-		return true
+		return areInPlaceResizesAllocatable(nodes, tasksToAllocate)
 	}
 	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
 
@@ -49,6 +42,17 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 		return false
 	}
 	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+}
+
+func areInPlaceResizesAllocatable(nodes []*node_info.NodeInfo, tasks []*pod_info.PodInfo) bool {
+	for _, task := range tasks {
+		if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
+			return node.IsInPlaceResizeAllocatable(task)
+		}) {
+			return false
+		}
+	}
+	return true
 }
 
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
