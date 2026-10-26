@@ -45,10 +45,11 @@ The resizing pod is never re-placed; only victims are.
 5. On success the solver's statement holds only victim evictions and moves,
    and it is committed as is.
 
-The stand-in requests zero, so the increase is never counted twice and
-nothing that sums requests needs a special case: GPU scenario filters, the
+The stand-in requests zero, so the increase is never counted twice: the
 sub-scenario emitter, reclaim's fair-share checks and the validators all see
-no extra demand.
+no extra demand. The solver's scenario filters (node affinity, idle GPUs,
+topology idle GPUs) are skipped for a stand-in, since the fit check above is
+the only test that applies.
 
 ## Design notes
 
