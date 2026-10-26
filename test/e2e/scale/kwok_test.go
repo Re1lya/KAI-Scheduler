@@ -704,10 +704,12 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				}
 			})
 
-			// Experiments, hierarchical RL pipelines (GPU trainer + rollout of GPU generators and CPU environments) and
-			// CPU-only preprocessing, each 5-10% of the cluster, spread over several queues and oversubscribing it.
-			// Reports the time each workload waits for its first decision, allocated or unschedulable.
-			// Simulation: all workloads arrive in one burst and none complete; CPU nodes are a KWOK node pool.
+			// Equal-priority queues submitting GPU experiments, hierarchical RL pipelines (GPU trainer plus a rollout of
+			// GPU generators and CPU environments) and CPU-only preprocessing jobs, each 5-10% of the cluster, together
+			// requesting ~150% of GPU and CPU capacity. Reports p50/p95/max time to each workload's first decision,
+			// allocated or unschedulable, and checks gang integrity and CPU/GPU node placement.
+			// Simulation: all workloads arrive in one burst and none complete. CPU-only nodes are a test-created KWOK
+			// node pool without GPUs.
 			It("research scale scenario: mixed workload decision latency", func(ctx context.Context) {
 				researchWorkloads(ctx, testCtx, researchQueues, numberOfNodes, cpuNodes)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))

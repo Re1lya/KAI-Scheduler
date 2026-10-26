@@ -41,9 +41,7 @@ Tests are organized into contexts:
   - Distributed job scheduling
   - Reclaim scenarios
   - Mixed NVfractions saturation
-  - Frontier-lab research workloads: experiments, hierarchical RL pipelines and CPU-only preprocessing across
-    several queues, measuring time to a scheduling decision (allocated or unschedulable). CPU-only pods run on a
-    test-created KWOK node pool without GPUs; all workloads arrive in one burst and none complete during the run.
+  - Heterogeneous workloads
 
 
 ## Environment Setup
