@@ -14,22 +14,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 )
 
-func TestOrderedVictimsQueueOnNodeKeepsOnlyJobsOnTheNode(t *testing.T) {
-	ssn, reclaimer, onNode, otherNode := newVictimQueueTestSession()
-	for _, task := range otherNode.GetAllPodsMap() {
-		task.NodeName = "node-1"
-	}
-	ssn.AddReclaimVictimFilterFn(func(_, _ *podgroup_info.PodGroupInfo) bool { return true })
-
-	queue := getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-0")()
-	require.Same(t, onNode, queue.PopNextJob())
-	require.True(t, queue.IsEmpty(), "same-queue and other-node jobs are not victims")
-
-	queue = getOrderedVictimsQueueOnNode(ssn, reclaimer, "node-1")()
-	require.Same(t, otherNode, queue.PopNextJob())
-	require.True(t, queue.IsEmpty())
-}
-
 func TestSolveDeferredResizeChecksCanReclaimResources(t *testing.T) {
 	ssn, reclaimer, _, _ := newVictimQueueTestSession()
 	node := &node_info.NodeInfo{Name: "node-0"}

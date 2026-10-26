@@ -1113,3 +1113,42 @@ func TestPreemptForDeferredResize_ChargesTheResizeOnce(t *testing.T) {
 	assert.Equal(t, "node0", resizer.NodeName)
 	assert.Equal(t, 1000.0, node.NonAllocatedResource(v1.ResourceCPU))
 }
+
+// The running GPU sibling is already placed, so it is no GPU demand for a CPU-only victim to cover.
+func TestPreemptForDeferredResize_TopologyGangWithRunningGPUSibling(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+
+	resizer := deferredResizeJob("resizer", "node0", 3, 1)
+	resizer.RequiredGPUsPerTask = 1
+	resizer.RootSubGroupSet = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+		&topology_info.TopologyConstraintInfo{Topology: "cluster-topology", RequiredLevel: "rack"})
+	resizer.RootSubGroupSet.AddPodSet(subgroup_info.NewPodSet("default", 2, nil))
+	resizer.Tasks = append(resizer.Tasks, &tasks_fake.TestTaskBasic{State: pod_status.Running, NodeName: "node0"})
+
+	topology := test_utils.TestTopologyBasic{
+		Name: "topology gang with a running GPU sibling",
+		Jobs: []*jobs_fake.TestJobBasic{
+			resizer,
+			runningCPUJob("victim", "queue0", "node0", constants.PriorityTrainNumber, 2),
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {CPUMillis: 7, GPUs: 2, Labels: map[string]string{"rack": "rack0"}},
+		},
+		Queues: []test_utils.TestQueueBasic{{Name: "queue0", DeservedGPUs: 2}},
+		Topologies: []*kaiv1alpha1.Topology{{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-topology"},
+			Spec:       kaiv1alpha1.TopologySpec{Levels: []kaiv1alpha1.TopologyLevel{{NodeLabel: "rack"}}},
+		}},
+		Mocks:                    evictionMocks(1),
+		DeferredResizePreemption: true,
+	}
+	ssn := test_utils.BuildSession(topology, controller)
+	preempt.New().Execute(ssn)
+
+	assert.Equal(t, pod_status.Releasing, ssn.ClusterInfo.PodGroupInfos["victim"].GetAllPodsMap()["victim-0"].Status)
+	for _, task := range ssn.ClusterInfo.PodGroupInfos["resizer"].GetAllPodsMap() {
+		assert.Equal(t, pod_status.Running, task.Status, task.Name)
+	}
+}
