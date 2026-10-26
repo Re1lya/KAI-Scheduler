@@ -44,17 +44,6 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
 }
 
-func isResizeStandInAllocatable(nodes []*node_info.NodeInfo, tasks []*pod_info.PodInfo) bool {
-	for _, task := range tasks {
-		if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
-			return node.IsInPlaceResizeAllocatable(task)
-		}) {
-			return false
-		}
-	}
-	return true
-}
-
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
@@ -336,4 +325,15 @@ func orderedMembers(ssn *framework.Session, subGroupMembers []subgroup_info.SubG
 		return ssn.SubGroupOrderFn(subGroupMembers[i], subGroupMembers[j])
 	})
 	return subGroupMembers
+}
+
+func isResizeStandInAllocatable(nodes []*node_info.NodeInfo, tasks []*pod_info.PodInfo) bool {
+	for _, task := range tasks {
+		if !slices.ContainsFunc(nodes, func(node *node_info.NodeInfo) bool {
+			return node.IsInPlaceResizeAllocatable(task)
+		}) {
+			return false
+		}
+	}
+	return true
 }
