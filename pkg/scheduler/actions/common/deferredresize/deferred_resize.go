@@ -85,7 +85,7 @@ func deferredTasks(ssn *framework.Session, job *podgroup_info.PodGroupInfo) []*p
 			tasks = append(tasks, task)
 		}
 	}
-	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Name < tasks[j].Name })
+	sort.Slice(tasks, func(i, j int) bool { return ssn.TaskOrderFn(tasks[i], tasks[j]) })
 	return tasks
 }
 

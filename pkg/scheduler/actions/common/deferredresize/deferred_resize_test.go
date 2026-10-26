@@ -104,7 +104,7 @@ func TestAttemptForJob_SolvesEachDeferredTaskWithAStandIn(t *testing.T) {
 	require.False(t, deferredresize.AttemptForJob(ssn, job, framework.Preempt, recordingSolve(&calls), neverStop))
 
 	require.Len(t, calls, 2)
-	assert.Equal(t, "node1", calls[0].node, "tasks are tried by name")
+	assert.Equal(t, "node1", calls[0].node, "tasks are tried in task order")
 	assert.Equal(t, "node0", calls[1].node)
 	for i, call := range calls {
 		resizing := taskByName(job, []string{"resizer-0", "resizer-1"}[i])
